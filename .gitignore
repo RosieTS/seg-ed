@@ -1,1 +1,9 @@
+<<<<<<< HEAD
 data/
+=======
+model*
+data/*
+__pycache__
+*.png
+
+>>>>>>> 99a75474a8a29071384b5cbb67a1c3c7cafa8175
