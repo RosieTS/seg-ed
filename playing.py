@@ -35,6 +35,7 @@ import torchvision.transforms.functional as func
 
 from torch.utils.data import Dataset, DataLoader
 
+from datetime import datetime
 
 from unet import UNet
 
@@ -69,22 +70,41 @@ def parse_command_line_args() -> Namespace:
     )
 
     parser.add_argument(
+        "--num_layers", help="Number of layers on each side of network. Default in Unet is 5.", 
+        type=int
+    )
+
+    parser.add_argument(
         "--data_download",
         type=bool,
-        default=True,
+        default=False,
         action=BooleanOptionalAction,
-        help="Should we download the data? Won't download unless necessary.",
+        help="Should we download/unpack the data? Default is False.",
     )
 
     parser.add_argument(
         "--loader_workers",
-        help="Number of workers for the dataloaders to use",
+        help="Number of workers for the dataloaders to use.",
         type=int,
         default=6,
     )
 
     parser.add_argument(
         "--device", help="Device to use (cpu or cuda)", type=str, default="cuda",
+    )
+
+    parser.add_argument(
+        "--subsample", 
+        help="Number of training/validation records to use (for testing code). Default is 'all'.", 
+        type=str,
+        default="all"
+    )
+
+    parser.add_argument(
+        "--model_root",
+        help="Model name root for saving/loading. Default is 'model'.",
+        type=str,
+        default="model"
     )
 
     return parser.parse_args()
@@ -103,6 +123,7 @@ def set_device(device):
         DEVICE = device
     elif device == "cuda":
         DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"Device set to: {DEVICE}.")
     else:
         raise ValueError(f"Device option {device} is not acceptable.")
 
@@ -150,13 +171,15 @@ target_transforms = transforms.Compose(
 )
 
 
-def get_data_set_and_loader(args: Namespace) -> Tuple[Dataset, DataLoader]:
-    """Return a dataset and dataloader to use in training.
+def get_data_set_and_loader(args: Namespace, img_set) -> Tuple[Dataset, DataLoader]:
+    """Return a dataset and dataloader to use in training/validation.
 
     Parameters
     ----------
     args : Namespace
         Command-line arguments.
+    img_set : Image Set to use. 
+        "train" or "val"
 
     Returns
     -------
@@ -166,20 +189,60 @@ def get_data_set_and_loader(args: Namespace) -> Tuple[Dataset, DataLoader]:
         The requested dataloader.
 
     """
+    if img_set == 'train':
+        shuffle_img = True
+    elif img_set == 'val':
+        shuffle_img = False
+    else:
+        raise ValueError(f"Image set option {img_set} is not acceptable.")
+
+
     data_set = VOCSegmentation(
         "data",
-        image_set="train",
+        #image_set="train",
+        image_set=img_set,
         download=args.data_download,
         transform=img_transforms,
         target_transform=target_transforms,
     )
 
+    data_set = data_subset(args, data_set)
+
     data_loader = DataLoader(
-        data_set, batch_size=args.bs, num_workers=args.loader_workers,
+        data_set, 
+        batch_size=args.bs, 
+        shuffle=shuffle_img,
+        num_workers=args.loader_workers,
     )
 
     return data_set, data_loader
 
+def data_subset(args: Namespace, data_set):
+    """Return a subsample of records from a dataset.
+
+    Parameters
+    ----------
+    args : Namespace
+        Command-line arguments.
+    data_set : Dataset.
+        The data set to sample from.
+    
+    Returns
+    -------
+    data_set : Dataset
+        The subsampled dataset.
+    """
+
+    if str.isdigit(args.subsample):
+        if int(args.subsample) <= len(data_set):
+            subsample = torch.randint(len(data_set), (int(args.subsample),))
+            data_set = torch.utils.data.Subset(data_set, subsample)
+        else:
+            print("Subsample requested is greater than number of records in dataset. Using whole dataset.")
+    elif args.subsample != "all":
+        raise ValueError("Subsample requested is not an integer or 'all'. Using whole dataset.")
+
+    return data_set
 
 def train_model(args: Namespace):
     """Train a segmentation model.
@@ -194,13 +257,23 @@ def train_model(args: Namespace):
     optimiser = Adam(model.parameters())
     loss_func = BCELoss()
 
-    data_set, data_loader = get_data_set_and_loader(args)
+    training_set, training_loader = get_data_set_and_loader(args, img_set = "train")
+    validation_set, validation_loader = get_data_set_and_loader(args, img_set = "val")
+
+    print("Training set has {} instances".format(len(training_set)))
+    print("Validation set has {} instances".format(len(validation_set)))
 
     for epoch in range(args.epochs):
 
-        running_loss = train_one_epoch(model, data_loader, optimiser, loss_func)
+        print(f"EPOCH: {epoch}")
 
-        print(f"Epoch {epoch} loss: {running_loss:.3f}")
+        running_loss = train_one_epoch(model, training_loader, optimiser, loss_func)
+        running_vloss = validate_one_epoch(model, validation_loader, loss_func)
+
+        print(f"Epoch {epoch} training loss: {running_loss:.3f}, validation loss: {running_vloss:.3f}")
+
+    model_file = save_model(args, model)
+    print(f'Model saved to {model_file}')
 
 
 def train_one_epoch(
@@ -242,15 +315,64 @@ def train_one_epoch(
 
     return running_loss
 
+def validate_one_epoch(
+    model: Module, data_loader: DataLoader, loss_func: Module,
+) -> float:
+    """Validate `model` for a single epoch.
 
-def save_model():
-    """Save the model.
+    Parameters
+    ----------
+    model : Module
+        The model to train.
+    data_loader : DataLoader
+        The validation data loader.
 
-    Fill with magical code.
+    Returns
+    -------
+    running_vloss : float
+        The total loss for this epoch.
 
     """
-    raise NotImplementedError()
+# We don't need gradients on to do reporting
+    model.train(False)
 
+    running_vloss = 0.0
+    with torch.no_grad():
+        for imgs, targets in data_loader:
+            
+            imgs, targets = imgs.to(DEVICE), targets.to(DEVICE)
+
+            predictions = model(imgs).softmax(dim=1)
+
+            loss = loss_func(predictions, targets)
+
+            running_vloss += loss.item()
+
+    return running_vloss
+
+
+def save_model(args: Namespace, model):
+    """Save the model.
+    Parameters
+    ----------
+    args : Namespace
+        Command-line arguments.
+    model : Module
+        The model to save.
+
+    Returns
+    -------
+    model_path : Path name
+        Path where model is saved.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_path = "{}_{}".format(args.model_root, timestamp)
+    try:
+        torch.save(model, model_path)
+    except:
+        NotImplementedError("Model not saved correctly.")
+
+    return model_path
 
 def save_pretty_pictures(model: Module, data_set: Dataset):
     """You get the idea."""

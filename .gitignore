@@ -2,6 +2,7 @@
 data/
 =======
 model*
+rosiemod*
 data/*
 __pycache__
 *.png
