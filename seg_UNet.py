@@ -40,7 +40,9 @@ from datetime import datetime
 from unet import UNet
 
 
-DEVICE = "cpu"
+#DEVICE = "cpu"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Device set to: {DEVICE}.")
 
 
 def parse_command_line_args() -> Namespace:
@@ -90,10 +92,6 @@ def parse_command_line_args() -> Namespace:
     )
 
     parser.add_argument(
-        "--device", help="Device to use (cpu or cuda)", type=str, default="cuda",
-    )
-
-    parser.add_argument(
         "--subsample", 
         help="Number of training/validation records to use (for testing code). Default is 'all'.", 
         type=str,
@@ -108,24 +106,6 @@ def parse_command_line_args() -> Namespace:
     )
 
     return parser.parse_args()
-
-
-def set_device(device):
-    """Set the device.
-
-    Parameters
-    ----------
-    device : str
-        The user-requested device.
-
-    """
-    if device == "cpu":
-        DEVICE = device
-    elif device == "cuda":
-        DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"Device set to: {DEVICE}.")
-    else:
-        raise ValueError(f"Device option {device} is not acceptable.")
 
 
 def convert_target_pil_to_tensor(pil_img) -> Tensor:
@@ -265,7 +245,7 @@ def train_model(args: Namespace):
 
     for epoch in range(args.epochs):
 
-        print(f"EPOCH: {epoch}")
+        print(f"EPOCH: {epoch+1}")
 
         running_loss = train_one_epoch(model, training_loader, optimiser, loss_func)
         running_vloss = validate_one_epoch(model, validation_loader, loss_func)
@@ -376,5 +356,6 @@ def save_model(args: Namespace, model):
 
 if __name__ == "__main__":
     command_line_args = parse_command_line_args()
-    set_device(command_line_args.device)
+    print("DEVICE is now: {}".format(DEVICE))
     train_model(command_line_args)
+    

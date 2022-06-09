@@ -28,7 +28,6 @@ from torch import Tensor
 from torch.nn import Module, BCELoss
 from torch.optim import Adam, Optimizer
 
-
 from torchvision.datasets import VOCSegmentation
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as func
@@ -39,9 +38,12 @@ from datetime import datetime
 
 from unet import UNet
 
+from PIL import Image
+import numpy as np
 
-DEVICE = "cpu"
-
+#DEVICE = "cpu"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Device set to: {DEVICE}.")
 
 def parse_command_line_args() -> Namespace:
     """Parse the command-line arguments.
@@ -71,7 +73,7 @@ def parse_command_line_args() -> Namespace:
 
     parser.add_argument(
         "--num_layers", help="Number of layers on each side of network. Default in Unet is 5.", 
-        type=int
+        type=int, default=5
     )
 
     parser.add_argument(
@@ -89,9 +91,9 @@ def parse_command_line_args() -> Namespace:
         default=6,
     )
 
-    parser.add_argument(
-        "--device", help="Device to use (cpu or cuda)", type=str, default="cuda",
-    )
+    #parser.add_argument(
+    #    "--device", help="Device to use (cpu or cuda)", type=str, default="cuda",
+    #)
 
     parser.add_argument(
         "--subsample", 
@@ -109,7 +111,7 @@ def parse_command_line_args() -> Namespace:
 
     return parser.parse_args()
 
-
+'''
 def set_device(device):
     """Set the device.
 
@@ -126,7 +128,7 @@ def set_device(device):
         print(f"Device set to: {DEVICE}.")
     else:
         raise ValueError(f"Device option {device} is not acceptable.")
-
+'''
 
 def convert_target_pil_to_tensor(pil_img) -> Tensor:
     """Convert the target mask from pillow image to tensor.
@@ -253,7 +255,7 @@ def train_model(args: Namespace):
         The command-line arguments.
 
     """
-    model = UNet(args.num_classes).to(DEVICE)
+    model = UNet(args.num_classes, num_layers=args.num_layers).to(DEVICE)
     optimiser = Adam(model.parameters())
     loss_func = BCELoss()
 
@@ -265,7 +267,7 @@ def train_model(args: Namespace):
 
     for epoch in range(args.epochs):
 
-        print(f"EPOCH: {epoch}")
+        print(f"EPOCH: {epoch+1}")
 
         running_loss = train_one_epoch(model, training_loader, optimiser, loss_func)
         running_vloss = validate_one_epoch(model, validation_loader, loss_func)
@@ -274,6 +276,8 @@ def train_model(args: Namespace):
 
     model_file = save_model(args, model)
     print(f'Model saved to {model_file}')
+
+    save_pretty_pictures(model, validation_set, num_image=3)
 
 
 def train_one_epoch(
@@ -374,8 +378,90 @@ def save_model(args: Namespace, model):
 
     return model_path
 
-def save_pretty_pictures(model: Module, data_set: Dataset):
-    """You get the idea."""
+def get_single_image(data_set: Dataset):
+    """Return a single image + target from dataset.
+    Parameters
+    ----------
+    data_set : Dataset
+        Torch dataset
+    Returns
+    -------
+    img : Image tensor
+    lab : Target tensor
+    """
+    n_samples = len(data_set)
+
+    random_index = int(torch.randint(n_samples, (1,)))
+    img, lab = data_set[random_index]
+
+    return img, lab
+
+def save_pretty_pictures(model: Module, data_set: Dataset, num_image):
+    """Return a single image + target from dataset.
+    Parameters
+    ----------
+    model : Module
+        The trained model.
+    data_set : Dataset
+        Torch dataset
+    """
+    
+    for i in range(num_image):
+
+        with torch.no_grad():
+            img, lab = get_single_image(data_set)
+
+            img_gpu = torch.unsqueeze(img,0).to(DEVICE)
+            output = model(img_gpu).softmax(2)
+        
+            output = output.to("cpu")
+        
+        img_pred = np.argmax(output, axis=1)
+
+        img_lab = np.argmax(lab, axis=1)
+        img_lab = img_lab.type(torch.float)
+
+        orig_img = func.to_pil_image(torch.squeeze(img))
+        orig_img.save("orig_img{}.png".format(i))
+
+        pil_pred = seg_to_pil(img_pred)
+        pil_pred.save("pred_img{}.png".format(i))
+
+        pil_lab = seg_to_pil(img_lab)
+        pil_lab.save("targ_img{}.png".format(i))
+
+
+def seg_to_pil(img_tensor):
+    """Convert model predictions to a pillow image.
+    Parameters
+    ----------
+    img_tensor : Tensor of model predictions for one image. 
+        The model to save.
+
+    Returns
+    -------
+    pil_img : PIL Image
+        PIL Image using same palette as targets.
+    """
+    # Steal the palette from one of the images
+    image = Image.open("data/VOCdevkit/VOC2012/SegmentationClass/2011_003271.png")
+#     # pixels = (np.array(image.getchannel(0)))
+    pal = np.array(image.getpalette()).reshape(256, 3)
+    # Apply colour for 255 to value 21, rather than changing the value in the image.
+    pal[21, :] = pal[255, :]
+    pal = list(pal.flatten())
+
+    pil_img = transforms.ToPILImage()(img_tensor.type(torch.uint8))
+
+#     # print(np.array(pil_img))
+    pil_img = pil_img.convert("P")
+    pil_img.putpalette(pal)
+    
+    return pil_img
+
+
+
+
 
 
 # transform_tgt = transforms.Compose([convert_target, transforms.Resize([500, 500])])
@@ -716,5 +802,6 @@ def save_pretty_pictures(model: Module, data_set: Dataset):
 
 if __name__ == "__main__":
     command_line_args = parse_command_line_args()
-    set_device(command_line_args.device)
+    #set_device(command_line_args.device)
+    print("DEVICE is now: {}".format(DEVICE))
     train_model(command_line_args)
