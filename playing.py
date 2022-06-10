@@ -412,15 +412,16 @@ def save_pretty_pictures(model: Module, data_set: Dataset, num_image):
             img, lab = get_single_image(data_set)
 
             img_gpu = torch.unsqueeze(img,0).to(DEVICE)
-            output = model(img_gpu).softmax(2)
+            output = model(img_gpu).softmax(dim=1)
         
             output = output.to("cpu")
-        
+
         img_pred = np.argmax(output, axis=1)
 
+        lab = torch.unsqueeze(lab,0)
         img_lab = np.argmax(lab, axis=1)
         img_lab = img_lab.type(torch.float)
-
+        
         orig_img = func.to_pil_image(torch.squeeze(img))
         orig_img.save("orig_img{}.png".format(i))
 

@@ -92,4 +92,4 @@ if __name__ == "__main__":
     #print(DEVICE)
     validation_set, validation_loader = get_data_set_and_loader(command_line_args, img_set = "val")
     model = torch.load(command_line_args.model_path, map_location=DEVICE)
-    save_pretty_pictures(model, validation_set, num_image=3)
+    save_pretty_pictures(model, validation_set, num_image=5)
