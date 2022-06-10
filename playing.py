@@ -272,7 +272,7 @@ def train_model(args: Namespace):
         running_loss = train_one_epoch(model, training_loader, optimiser, loss_func)
         running_vloss = validate_one_epoch(model, validation_loader, loss_func)
 
-        print(f"Epoch {epoch} training loss: {running_loss:.3f}, validation loss: {running_vloss:.3f}")
+        print(f"Epoch {epoch+1} training loss: {running_loss:.3f}, validation loss: {running_vloss:.3f}")
 
     model_file = save_model(args, model)
     print(f'Model saved to {model_file}')
@@ -377,93 +377,6 @@ def save_model(args: Namespace, model):
         NotImplementedError("Model not saved correctly.")
 
     return model_path
-
-def get_single_image(data_set: Dataset):
-    """Return a single image + target from dataset.
-    Parameters
-    ----------
-    data_set : Dataset
-        Torch dataset
-    Returns
-    -------
-    img : Image tensor
-    lab : Target tensor
-    """
-    n_samples = len(data_set)
-
-    random_index = int(torch.randint(n_samples, (1,)))
-    img, lab = data_set[random_index]
-
-    return img, lab
-
-def save_pretty_pictures(model: Module, data_set: Dataset, num_image):
-    """Return a single image + target from dataset.
-    Parameters
-    ----------
-    model : Module
-        The trained model.
-    data_set : Dataset
-        Torch dataset
-    """
-    
-    for i in range(num_image):
-
-        with torch.no_grad():
-            img, lab = get_single_image(data_set)
-
-            img_gpu = torch.unsqueeze(img,0).to(DEVICE)
-            output = model(img_gpu).softmax(dim=1)
-        
-            output = output.to("cpu")
-
-        img_pred = np.argmax(output, axis=1)
-
-        lab = torch.unsqueeze(lab,0)
-        img_lab = np.argmax(lab, axis=1)
-        img_lab = img_lab.type(torch.float)
-        
-        orig_img = func.to_pil_image(torch.squeeze(img))
-        orig_img.save("orig_img{}.png".format(i))
-
-        pil_pred = seg_to_pil(img_pred)
-        pil_pred.save("pred_img{}.png".format(i))
-
-        pil_lab = seg_to_pil(img_lab)
-        pil_lab.save("targ_img{}.png".format(i))
-
-
-def seg_to_pil(img_tensor):
-    """Convert model predictions to a pillow image.
-    Parameters
-    ----------
-    img_tensor : Tensor of model predictions for one image. 
-        The model to save.
-
-    Returns
-    -------
-    pil_img : PIL Image
-        PIL Image using same palette as targets.
-    """
-    # Steal the palette from one of the images
-    image = Image.open("data/VOCdevkit/VOC2012/SegmentationClass/2011_003271.png")
-#     # pixels = (np.array(image.getchannel(0)))
-    pal = np.array(image.getpalette()).reshape(256, 3)
-    # Apply colour for 255 to value 21, rather than changing the value in the image.
-    pal[21, :] = pal[255, :]
-    pal = list(pal.flatten())
-
-    pil_img = transforms.ToPILImage()(img_tensor.type(torch.uint8))
-
-#     # print(np.array(pil_img))
-    pil_img = pil_img.convert("P")
-    pil_img.putpalette(pal)
-    
-    return pil_img
-
-
-
-
-
 
 # transform_tgt = transforms.Compose([convert_target, transforms.Resize([500, 500])])
 
@@ -802,6 +715,11 @@ def seg_to_pil(img_tensor):
 
 
 if __name__ == "__main__":
+    from save_pics import (
+        get_single_image,
+        save_pretty_pictures,
+        seg_to_pil
+    )
     command_line_args = parse_command_line_args()
     #set_device(command_line_args.device)
     print("DEVICE is now: {}".format(DEVICE))

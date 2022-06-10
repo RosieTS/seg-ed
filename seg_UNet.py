@@ -250,7 +250,7 @@ def train_model(args: Namespace):
         running_loss = train_one_epoch(model, training_loader, optimiser, loss_func)
         running_vloss = validate_one_epoch(model, validation_loader, loss_func)
 
-        print(f"Epoch {epoch} training loss: {running_loss:.3f}, validation loss: {running_vloss:.3f}")
+        print(f"Epoch {epoch+1} training loss: {running_loss:.3f}, validation loss: {running_vloss:.3f}")
 
     model_file = save_model(args, model)
     print(f'Model saved to {model_file}')
