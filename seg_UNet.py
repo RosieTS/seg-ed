@@ -21,6 +21,7 @@ from argparse import (
     Namespace,
     BooleanOptionalAction,
 )
+import json
 from typing import Tuple
 
 import torch
@@ -37,6 +38,8 @@ from torch.utils.data import Dataset, DataLoader
 
 from datetime import datetime
 from tqdm import tqdm
+import os
+#from pathlib import Path
 
 from unet import UNet
 
@@ -107,6 +110,19 @@ def parse_command_line_args() -> Namespace:
     )
 
     return parser.parse_args()
+
+
+def write_command_line_args(args: Namespace):
+    ''' Write the command line arguments to a file
+
+    Parameters
+    ----------
+    args : Namespace
+        Command-line arguments.
+    '''
+
+    with open('command_line_args.txt', 'w') as f:
+        json.dump(args.__dict__, f, indent=2)
 
 
 def convert_target_pil_to_tensor(pil_img) -> Tensor:
@@ -181,7 +197,7 @@ def get_data_set_and_loader(args: Namespace, img_set) -> Tuple[Dataset, DataLoad
 
 
     data_set = VOCSegmentation(
-        "data",
+        "../data",
         #image_set="train",
         image_set=img_set,
         download=args.data_download,
@@ -357,8 +373,18 @@ def save_model(args: Namespace, model):
 
     return model_path
 
+def change_working_dir():
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    my_folder = "UNet_{}".format(timestamp)
+    
+    os.mkdir(my_folder)
+    os.chdir(my_folder) 
+
+
 if __name__ == "__main__":
     command_line_args = parse_command_line_args()
-    print("DEVICE is now: {}".format(DEVICE))
+    change_working_dir()
+    write_command_line_args(command_line_args)
+    #print("DEVICE is now: {}".format(DEVICE))
     train_model(command_line_args)
     

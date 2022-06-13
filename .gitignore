@@ -4,6 +4,7 @@ data/
 model*
 rosiemod*
 data/*
+UNet*/*
 __pycache__
 *.png
 
