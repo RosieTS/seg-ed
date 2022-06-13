@@ -36,6 +36,7 @@ import torchvision.transforms.functional as func
 from torch.utils.data import Dataset, DataLoader
 
 from datetime import datetime
+from tqdm import tqdm
 
 from unet import UNet
 
@@ -142,12 +143,14 @@ img_transforms = transforms.Compose(
     [
         transforms.ToTensor(),
         # Resizing because images all different sizing. Could instead pad or make custom collate.
-        transforms.Resize([500, 500]),
+        # Set to 572 x 572 to match original UNet paper
+        transforms.Resize([572, 572]),
     ]
 )
 
 target_transforms = transforms.Compose(
-    [convert_target_pil_to_tensor, transforms.Resize([500, 500])]
+    # Set to 572 x 572 to match original UNet paper
+    [convert_target_pil_to_tensor, transforms.Resize([572, 572])]
 )
 
 
@@ -243,7 +246,7 @@ def train_model(args: Namespace):
     print("Training set has {} instances".format(len(training_set)))
     print("Validation set has {} instances".format(len(validation_set)))
 
-    for epoch in range(args.epochs):
+    for i, epoch in tqdm(range(args.epochs)):
 
         print(f"EPOCH: {epoch+1}")
 
@@ -277,7 +280,7 @@ def train_one_epoch(
 
     """
     running_loss = 0.0
-    for imgs, targets in data_loader:
+    for imgs, targets in enumerate(data_loader):
 
         optimiser.zero_grad()
 
