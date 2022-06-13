@@ -246,7 +246,7 @@ def train_model(args: Namespace):
     print("Training set has {} instances".format(len(training_set)))
     print("Validation set has {} instances".format(len(validation_set)))
 
-    for i, epoch in tqdm(range(args.epochs)):
+    for epoch in tqdm(range(args.epochs)):
 
         print(f"EPOCH: {epoch+1}")
 
@@ -280,7 +280,7 @@ def train_one_epoch(
 
     """
     running_loss = 0.0
-    for imgs, targets in enumerate(data_loader):
+    for imgs, targets in data_loader:
 
         optimiser.zero_grad()
 
