@@ -72,6 +72,8 @@ def parse_command_line_args() -> Namespace:
     # NB This is not used in the call to the optimiser - it is not doing anything.
     parser.add_argument("--lr", help="Learning rate.", type=float, default=1e-3)
 
+    parser.add_argument("--wd", help="Weight decay.", type=float, default=0)
+
     parser.add_argument(
         "--num_classes", help="Number of classes.", type=int, default=22
     )
@@ -258,7 +260,7 @@ def train_model(args: Namespace):
 
     """
     model = UNet(args.num_classes, num_layers=args.num_layers).to(DEVICE)
-    optimiser = Adam(model.parameters(), weight_decay=1e-3)
+    optimiser = Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
     loss_func = BCELoss()
 
     training_set, training_loader = get_data_set_and_loader(args, img_set = "train")
