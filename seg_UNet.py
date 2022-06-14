@@ -410,11 +410,11 @@ def save_model(args: Namespace, model):
     """
 #    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 #    model_path = "{}_{}".format(args.model_root, timestamp)
+#    As model now saved in a folder with the timestamp, doesn't need a timestamp.
+#    If we do need it, we should re-write to use the same timestamp as the folder.
+    model_path = args.model_root
     try:
-#        torch.save(model, model_path)
-#       As model now saved in a folder with the timestamp, doesn't need a timestamp.
-#       If we do need it, we should re-write to use the same timestamp as the folder.
-        torch.save(model, model_root)
+        torch.save(model, model_path)
     except:
         NotImplementedError("Model not saved correctly.")
 
