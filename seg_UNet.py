@@ -47,7 +47,11 @@ from unet import UNet
 #DEVICE = "cpu"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Device set to: {DEVICE}.")
+with torch.no_grad():
+    torch.cuda.empty_cache()
 
+import gc
+gc.collect()
 
 def parse_command_line_args() -> Namespace:
     """Parse the command-line arguments.
@@ -337,20 +341,18 @@ def train_one_epoch(
 
     """
     running_loss = 0.0
-    for imgs, targets in data_loader:
+    for images, targets in data_loader:
 
         ### Include "if" to say if want augmenting. ###
-        imgs_aug, targets_aug = data_augmenter(imgs, targets)
-        imgs = torch.cat((imgs, imgs_aug), dim=0)
-        targets = torch.cat((targets, targets_aug), dim=0)
+        imgs, targs = data_augmenter(images, targets)
 
         optimiser.zero_grad()
 
-        imgs, targets = imgs.to(DEVICE), targets.to(DEVICE)
+        imgs, targs = imgs.to(DEVICE), targs.to(DEVICE)
 
         predictions = model(imgs).softmax(dim=1)
 
-        loss = loss_func(predictions, targets)
+        loss = loss_func(predictions, targs)
 
         loss.backward()
 
