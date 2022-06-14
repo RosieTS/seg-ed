@@ -127,7 +127,7 @@ def write_command_line_args(args: Namespace):
 
 def write_losses_to_file(epoch, training_loss, validation_loss, filename="losses.txt"):
     f = open(filename, "a")
-    f.write(f"Epoch {epoch+1} training loss: {training_loss:.3f}, validation loss: {validation_loss:.3f}")
+    f.write(f"Epoch {epoch+1} training loss: {training_loss:.3f}, validation loss: {validation_loss:.3f}\n")
     f.close()
 
 def convert_target_pil_to_tensor(pil_img) -> Tensor:
