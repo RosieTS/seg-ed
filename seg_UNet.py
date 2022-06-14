@@ -124,6 +124,10 @@ def write_command_line_args(args: Namespace):
     with open('command_line_args.txt', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
+def write_losses_to_file(training_loss, validation_loss, filename="losses.txt"):
+    f = open(filename, "a")
+    f.write(f"Epoch {epoch+1} training loss: {running_loss:.3f}, validation loss: {running_vloss:.3f}")
+    f.close()
 
 def convert_target_pil_to_tensor(pil_img) -> Tensor:
     """Convert the target mask from pillow image to tensor.
@@ -269,10 +273,44 @@ def train_model(args: Namespace):
         running_loss = train_one_epoch(model, training_loader, optimiser, loss_func)
         running_vloss = validate_one_epoch(model, validation_loader, loss_func)
 
-        print(f"Epoch {epoch+1} training loss: {running_loss:.3f}, validation loss: {running_vloss:.3f}")
+        write_losses_to_file(training_loss = running_loss, validation_loss = running_vloss)
 
     model_file = save_model(args, model)
     print(f'Model saved to {model_file}')
+
+
+augment_transforms = transforms.Compose(
+    # Set to 572 x 572 to match original UNet paper
+    [   
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomResizedCrop(572, scale=(0.25, 1.0))
+    ]
+)
+
+def data_augmenter(images, targets):
+    """Transform a batch of images and targets using a random resized crop
+    
+    Parameters
+    ----------
+    images : set of images
+        Original images.
+    targets : set of targets
+        Original targets.
+
+    Returns
+    ----------
+    images_new : set of images
+        Images after transformation.
+    targets_New : set of targets
+        Targets after transformation.
+    """
+
+    img_concat = torch.cat((images, targets), dim=1)
+    augmented = augment_transforms(img_concat)
+    images_new = augmented[:, :3, :, :]
+    targets_new = augmented[:, 3:, :, :]
+
+    return images_new, targets_new
 
 
 def train_one_epoch(
@@ -297,6 +335,11 @@ def train_one_epoch(
     """
     running_loss = 0.0
     for imgs, targets in data_loader:
+
+        ### Include "if" to say if want augmenting. ###
+        imgs_aug, targets_aug = data_augmenter(imgs, targets)
+        imgs = torch.cat((imgs, imgs_aug), dim=0)
+        targets = torch.cat((targets, targets_aug), dim=0)
 
         optimiser.zero_grad()
 
@@ -364,10 +407,13 @@ def save_model(args: Namespace, model):
     model_path : Path name
         Path where model is saved.
     """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_path = "{}_{}".format(args.model_root, timestamp)
+#    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+#    model_path = "{}_{}".format(args.model_root, timestamp)
     try:
-        torch.save(model, model_path)
+#        torch.save(model, model_path)
+#       As model now saved in a folder with the timestamp, doesn't need a timestamp.
+#       If we do need it, we should re-write to use the same timestamp as the folder.
+        torch.save(model, model_root)
     except:
         NotImplementedError("Model not saved correctly.")
 
