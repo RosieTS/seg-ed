@@ -124,7 +124,7 @@ def write_command_line_args(args: Namespace):
     with open('command_line_args.txt', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
-def write_losses_to_file(training_loss, validation_loss, filename="losses.txt"):
+def write_losses_to_file(epoch, training_loss, validation_loss, filename="losses.txt"):
     f = open(filename, "a")
     f.write(f"Epoch {epoch+1} training loss: {running_loss:.3f}, validation loss: {running_vloss:.3f}")
     f.close()
@@ -273,7 +273,7 @@ def train_model(args: Namespace):
         running_loss = train_one_epoch(model, training_loader, optimiser, loss_func)
         running_vloss = validate_one_epoch(model, validation_loader, loss_func)
 
-        write_losses_to_file(training_loss = running_loss, validation_loss = running_vloss)
+        write_losses_to_file(epoch, training_loss = running_loss, validation_loss = running_vloss)
 
     model_file = save_model(args, model)
     print(f'Model saved to {model_file}')
