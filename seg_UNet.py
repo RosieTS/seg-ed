@@ -69,6 +69,7 @@ def parse_command_line_args() -> Namespace:
 
     parser.add_argument("--bs", help="Batch size", type=int, default=2)
 
+    # NB This is not used in the call to the optimiser - it is not doing anything.
     parser.add_argument("--lr", help="Learning rate.", type=float, default=1e-3)
 
     parser.add_argument(
@@ -126,7 +127,7 @@ def write_command_line_args(args: Namespace):
 
 def write_losses_to_file(epoch, training_loss, validation_loss, filename="losses.txt"):
     f = open(filename, "a")
-    f.write(f"Epoch {epoch+1} training loss: {running_loss:.3f}, validation loss: {running_vloss:.3f}")
+    f.write(f"Epoch {epoch+1} training loss: {training loss:.3f}, validation loss: {validation loss:.3f}")
     f.close()
 
 def convert_target_pil_to_tensor(pil_img) -> Tensor:
@@ -257,7 +258,7 @@ def train_model(args: Namespace):
 
     """
     model = UNet(args.num_classes, num_layers=args.num_layers).to(DEVICE)
-    optimiser = Adam(model.parameters())
+    optimiser = Adam(model.parameters(), weight_decay=1e-3)
     loss_func = BCELoss()
 
     training_set, training_loader = get_data_set_and_loader(args, img_set = "train")
