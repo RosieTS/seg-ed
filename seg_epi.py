@@ -1,19 +1,7 @@
-"""Segmentation training example.
+"""Segmentation of WSI images.
 
-Apart from U-net, all the below is taken from the tutorial below:
-https://pytorch.org/tutorials/beginner/introyt/trainingyt.html
+Target images labelled as epithelium (1) or background (0).
 
-I used the below to figure out that the target images are in "p" mode,
-which means "palettised". Which is basically one channel with numbers
-representing palette items, so I can just use that like a greyscale.
-
-from PIL import Image
-image = Image.open("data/VOCdevkit/VOC2012/SegmentationClass/2011_003271.png")
-image.mode
-
-The pixel classes are 1-20 for type of object, plus 0 for background
-and 255 for void/unlabelled.
-http://host.robots.ox.ac.uk/pascal/VOC/voc2012/segexamples/index.html
 """
 from argparse import (
     ArgumentDefaultsHelpFormatter,
@@ -24,13 +12,14 @@ from argparse import (
 import json
 from typing import Tuple
 
+from PIL import Image
+
 import torch
 from torch import Tensor
 from torch.nn import Module, BCELoss
 from torch.optim import Adam, Optimizer
 
-
-from torchvision.datasets import VOCSegmentation
+#from torchvision.datasets import VOCSegmentation
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as func
 
@@ -41,17 +30,16 @@ from tqdm import tqdm
 import os
 #from pathlib import Path
 
+from image_dataset import ImageDataset
 from unet import UNet
 
-
-#DEVICE = "cpu"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Device set to: {DEVICE}.")
 with torch.no_grad():
     torch.cuda.empty_cache()
 
-import gc
-gc.collect()
+#import gc
+#gc.collect()
 
 def parse_command_line_args() -> Namespace:
     """Parse the command-line arguments.
@@ -68,18 +56,17 @@ def parse_command_line_args() -> Namespace:
     )
 
     parser.add_argument(
-        "--epochs", help="Number of epochs to train for.", type=int, default=10,
+        "--epochs", help="Number of epochs to train for.", type=int, default=50,
     )
 
     parser.add_argument("--bs", help="Batch size", type=int, default=2)
 
-    # NB This is not used in the call to the optimiser - it is not doing anything.
     parser.add_argument("--lr", help="Learning rate.", type=float, default=1e-3)
 
     parser.add_argument("--wd", help="Weight decay.", type=float, default=0)
 
     parser.add_argument(
-        "--num_classes", help="Number of classes.", type=int, default=22
+        "--num_classes", help="Number of classes.", type=int, default=2
     )
 
     parser.add_argument(
@@ -88,18 +75,10 @@ def parse_command_line_args() -> Namespace:
     )
 
     parser.add_argument(
-        "--data_download",
-        type=bool,
-        default=False,
-        action=BooleanOptionalAction,
-        help="Should we download/unpack the data? Default is False.",
-    )
-
-    parser.add_argument(
         "--loader_workers",
         help="Number of workers for the dataloaders to use.",
         type=int,
-        default=6,
+        default=4,
     )
 
     parser.add_argument(
@@ -110,6 +89,27 @@ def parse_command_line_args() -> Namespace:
     )
 
     parser.add_argument(
+        "--train_frac",
+        help="Fraction of dataset to use as training data. Default is 0.7",
+        type=float,
+        default=0.7
+    )
+
+    parser.add_argument(
+        "--WSI_dir",
+        help="Path to directory containing WSIs. Default is /home/rosie/epithelium_slides/output_images",
+        type=str,
+        default="/home/rosie/epithelium_slides/output_images"
+    )
+
+    parser.add_argument(
+        "--mask_dir",
+        help="Path to directory containing segmentation masks. Default is /home/rosie/epithelium_slides/output_masks",
+        type=str,
+        default="/home/rosie/epithelium_slides/output_masks"
+    )
+
+    parser.add_argument(
         "--model_root",
         help="Model name root for saving/loading. Default is 'model'.",
         type=str,
@@ -117,6 +117,14 @@ def parse_command_line_args() -> Namespace:
     )
 
     return parser.parse_args()
+
+
+def change_working_dir():
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    my_folder = "UNet_{}".format(timestamp)
+    
+    os.mkdir(my_folder)
+    os.chdir(my_folder)
 
 
 def write_command_line_args(args: Namespace):
@@ -141,8 +149,19 @@ def write_acc_to_file(epoch, training_acc, validation_acc, filename="accuracy.tx
     f.write(f"Epoch {epoch+1} training accuracy: {training_acc:.3f}, validation accuracy: {validation_acc:.3f}\n")
     f.close()
 
-def convert_target_pil_to_tensor(pil_img) -> Tensor:
-    """Convert the target mask from pillow image to tensor.
+def get_file_names(file_dir):
+
+    files = sorted(os.listdir(file_dir))
+
+    file_names = []
+
+    for file in files:
+        file_names.append(os.path.join(file_dir, file))
+
+    return file_names    
+
+def convert_mask_pil_to_tensor(args: Namespace, pil_img) -> Tensor:
+    """Convert the target mask from B+W pillow image to tensor.
 
     Parameters
     ----------
@@ -164,76 +183,13 @@ def convert_target_pil_to_tensor(pil_img) -> Tensor:
         etc.
 
     """
-    grey = func.pil_to_tensor(pil_img).squeeze()
-    grey[grey == 255] = 21
-    num_classes = 22
-    target = torch.eye(num_classes)[grey.long()].permute(2, 0, 1).float()
+    pil_img = pil_img.convert('1')
+    grey = func.pil_to_tensor(pil_img).squeeze() / 255
+    #num_classes = 2
+    target = torch.eye(args.num_classes)[grey.long()].permute(2, 0, 1).float()
     return target
 
-
-img_transforms = transforms.Compose(
-    [
-        transforms.ToTensor(),
-        # Resizing because images all different sizing. Could instead pad or make custom collate.
-        # Set to 572 x 572 to match original UNet paper
-        transforms.Resize([572, 572]),
-    ]
-)
-
-target_transforms = transforms.Compose(
-    # Set to 572 x 572 to match original UNet paper
-    [convert_target_pil_to_tensor, transforms.Resize([572, 572])]
-)
-
-
-def get_data_set_and_loader(args: Namespace, img_set) -> Tuple[Dataset, DataLoader]:
-    """Return a dataset and dataloader to use in training/validation.
-
-    Parameters
-    ----------
-    args : Namespace
-        Command-line arguments.
-    img_set : Image Set to use. 
-        "train" or "val"
-
-    Returns
-    -------
-    data_set : Dataset
-        The requested dataset.
-    data_loader : DataLoader
-        The requested dataloader.
-
-    """
-    if img_set == 'train':
-        shuffle_img = True
-    elif img_set == 'val':
-        shuffle_img = False
-    else:
-        raise ValueError(f"Image set option {img_set} is not acceptable.")
-
-
-    data_set = VOCSegmentation(
-        "../data",
-        #image_set="train",
-        image_set=img_set,
-        download=args.data_download,
-        transform=img_transforms,
-        target_transform=target_transforms,
-    )
-
-    data_set = data_subset(args, data_set)
-
-    data_loader = DataLoader(
-        data_set, 
-        batch_size=args.bs, 
-        shuffle=shuffle_img,
-        num_workers=args.loader_workers,
-    )
-
-    return data_set, data_loader
-
-
-def data_subset(args: Namespace, data_set):
+def data_subset(data_set, subsample):
     """Return a subsample of records from a dataset.
 
     Parameters
@@ -249,49 +205,25 @@ def data_subset(args: Namespace, data_set):
         The subsampled dataset.
     """
 
-    if str.isdigit(args.subsample):
-        if int(args.subsample) <= len(data_set):
-            subsample = torch.randint(len(data_set), (int(args.subsample),))
+    if str.isdigit(subsample):
+        if int(subsample) <= len(data_set):
+            subsample = torch.randint(len(data_set), (int(subsample),))
             data_set = torch.utils.data.Subset(data_set, subsample)
         else:
             print("Subsample requested is greater than number of records in dataset. Using whole dataset.")
-    elif args.subsample != "all":
+    elif subsample != "all":
         raise ValueError("Subsample requested is not an integer or 'all'. Using whole dataset.")
 
     return data_set
 
+def split_dataset(dataset, train_frac):
+    '''
+    Split a dataset into training and validation datasets.
+    '''
+    train_num = int(train_frac * len(dataset))
+    val_num = len(dataset) - train_num
 
-def train_model(args: Namespace):
-    """Train a segmentation model.
-
-    Parameters
-    ----------
-    args : Namespace
-        The command-line arguments.
-
-    """
-    model = UNet(args.num_classes, num_layers=args.num_layers).to(DEVICE)
-    optimiser = Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
-    loss_func = BCELoss()
-
-    training_set, training_loader = get_data_set_and_loader(args, img_set = "train")
-    validation_set, validation_loader = get_data_set_and_loader(args, img_set = "val")
-
-    print("Training set has {} instances".format(len(training_set)))
-    print("Validation set has {} instances".format(len(validation_set)))
-
-    for epoch in tqdm(range(args.epochs)):
-
-        print(f"EPOCH: {epoch+1}")
-
-        running_loss, accuracy = train_one_epoch(model, training_loader, optimiser, loss_func)
-        running_vloss, vaccuracy = validate_one_epoch(model, validation_loader, loss_func)
-
-        write_losses_to_file(epoch, training_loss = running_loss, validation_loss = running_vloss)
-        write_acc_to_file(epoch, training_acc = accuracy, validation_acc = vaccuracy)
-
-    model_file = save_model(args, model)
-    print(f'Model saved to {model_file}')
+    return torch.utils.data.random_split(dataset, [train_num, val_num])
 
 
 augment_transforms = transforms.Compose(
@@ -301,7 +233,6 @@ augment_transforms = transforms.Compose(
         transforms.RandomResizedCrop(572, scale=(0.25, 1.0))
     ]
 )
-
 
 def data_augmenter(images, targets):
     """Transform a batch of images and targets using a random resized crop
@@ -329,6 +260,70 @@ def data_augmenter(images, targets):
     return images_new, targets_new
 
 
+def get_data_sets(WSI_dir, mask_dir, subsample, train_frac):
+    '''
+    Get training and validation data sets from paths to
+    WSI and target mask directories.
+    Assumes images and masks will be in the same order when
+    sorted alphabetically.
+    '''
+
+    image_file_names = get_file_names(WSI_dir)
+    mask_file_names = get_file_names(mask_dir)
+
+    image_transforms = transforms.Compose(
+        [Image.open, 
+        transforms.ToTensor()]
+    )
+    target_transforms = transforms.Compose(
+        [Image.open, 
+        convert_mask_pil_to_tensor]
+    )
+
+    data_set = ImageDataset(
+        inputs = image_file_names,
+        image_transforms = image_transforms,
+        targets = mask_file_names,
+        target_transforms = target_transforms
+    )
+
+    data_set = data_subset(data_set, subsample)
+
+    return split_dataset(data_set, train_frac)
+
+def get_data_loader(data_set, img_set, batch_size, loader_workers):
+    """Return a dataloader to use in training/validation.
+
+    Parameters
+    ----------
+    args : Namespace
+        Command-line arguments.
+    img_set : Image Set to use. 
+        "train" or "val"
+    data_set : Dataset
+        The dataset to be loaded. 
+
+    Returns
+    -------
+    data_loader : DataLoader
+        The requested dataloader.
+    """
+    if img_set == 'train':
+        shuffle_img = True
+    elif img_set == 'val':
+        shuffle_img = False
+    else:
+        raise ValueError(f"Image set option {img_set} is not acceptable.")
+
+    data_loader = DataLoader(
+        data_set, 
+        batch_size=batch_size, 
+        shuffle=shuffle_img,
+        num_workers=loader_workers,
+    )
+
+    return data_loader
+    
 def calculate_accuracy(predictions, targets):
     ''' Calculate pixel-wise accuracy of predictions. '''
 
@@ -454,12 +449,39 @@ def save_model(args: Namespace, model):
     return model_path
 
 
-def change_working_dir():
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    my_folder = "UNet_{}".format(timestamp)
-    
-    os.mkdir(my_folder)
-    os.chdir(my_folder) 
+def train_model(args: Namespace):
+    """Train a segmentation model.
+
+    Parameters
+    ----------
+    args : Namespace
+        The command-line arguments.
+
+    """
+    model = UNet(args.num_classes, num_layers=args.num_layers).to(DEVICE)
+    optimiser = Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    loss_func = BCELoss()
+
+    training_set, validation_set = get_data_sets(args.WSI_dir, args.mask_dir, args.subsample, args.train_frac)
+
+    training_loader = get_data_loader(training_set, "train", args.bs, args.loader_workers)
+    validation_loader = get_data_loader(validation_set, "val", args.bs, args.loader_workers)
+
+    print("Training set has {} instances".format(len(training_set)))
+    print("Validation set has {} instances".format(len(validation_set)))
+
+    # for epoch in tqdm(range(args.epochs)):
+
+    #     print(f"EPOCH: {epoch+1}")
+
+    #     running_loss, accuracy = train_one_epoch(model, training_loader, optimiser, loss_func)
+    #     running_vloss, vaccuracy = validate_one_epoch(model, validation_loader, loss_func)
+
+    #     write_losses_to_file(epoch, training_loss = running_loss, validation_loss = running_vloss)
+    #     write_acc_to_file(epoch, training_acc = accuracy, validation_acc = vaccuracy)
+
+    # model_file = save_model(args, model)
+    # print(f'Model saved to {model_file}')
 
 
 if __name__ == "__main__":

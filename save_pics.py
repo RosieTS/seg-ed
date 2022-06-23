@@ -154,7 +154,7 @@ def seg_to_pil(img_tensor):
         PIL Image using same palette as targets.
     """
     # Steal the palette from one of the images
-    image = Image.open("data/VOCdevkit/VOC2012/SegmentationClass/2011_003271.png")
+    image = Image.open("C:/Users/rosie/WSL/seg-ed/data/VOCdevkit/VOC2012/SegmentationClass/2011_003271.png")
 #     # pixels = (np.array(image.getchannel(0)))
     pal = np.array(image.getpalette()).reshape(256, 3)
     # Apply colour for 255 to value 21, rather than changing the value in the image.

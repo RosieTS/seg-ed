@@ -200,7 +200,7 @@ def get_data_set_and_loader(args: Namespace, img_set) -> Tuple[Dataset, DataLoad
 
 
     data_set = VOCSegmentation(
-        "data",
+        "C:/Users/rosie/WSL/seg-ed/data",
         #image_set="train",
         image_set=img_set,
         download=args.data_download,
