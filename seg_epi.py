@@ -144,15 +144,13 @@ def write_command_line_args(args: Namespace):
 
 def write_losses_to_file(epoch, training_loss, validation_loss, filename="losses.txt"):
     f = open(filename, "a")
-    f.write(f"Epoch {epoch+1} training loss: {training_loss:.3f}, 
-        validation loss: {validation_loss:.3f}\n")
+    f.write(f"Epoch {epoch+1} training loss: {training_loss:.3f}, validation loss: {validation_loss:.3f}\n")
     f.close()
 
 
 def write_acc_to_file(epoch, training_acc, validation_acc, filename="accuracy.txt"):
     f = open(filename, "a")
-    f.write(f"Epoch {epoch+1} training accuracy: {training_acc:.3f}, 
-        validation accuracy: {validation_acc:.3f}\n")
+    f.write(f"Epoch {epoch+1} training accuracy: {training_acc:.3f}, validation accuracy: {validation_acc:.3f}\n")
     f.close()
 
 
