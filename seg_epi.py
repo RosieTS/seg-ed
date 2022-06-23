@@ -166,7 +166,7 @@ def get_file_names(file_dir):
     return file_names
 
 
-def convert_mask_pil_to_tensor(args: Namespace, pil_img) -> Tensor:
+def convert_mask_pil_to_tensor(pil_img) -> Tensor:
     """Convert the target mask from B+W pillow image to tensor.
 
     Parameters
@@ -191,8 +191,8 @@ def convert_mask_pil_to_tensor(args: Namespace, pil_img) -> Tensor:
     """
     pil_img = pil_img.convert('1')
     grey = func.pil_to_tensor(pil_img).squeeze() / 255
-    #num_classes = 2
-    target = torch.eye(args.num_classes)[grey.long()].permute(2, 0, 1).float()
+    num_classes = 2
+    target = torch.eye(num_classes)[grey.long()].permute(2, 0, 1).float()
     return target
 
 def data_subset(data_set, subsample):
