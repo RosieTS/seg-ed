@@ -7,27 +7,28 @@ from argparse import (
     ArgumentDefaultsHelpFormatter,
     ArgumentParser,
     Namespace,
-    BooleanOptionalAction,
+    #BooleanOptionalAction,
 )
 import json
-from typing import Tuple
+#from typing import Tuple
 
+import os
+from datetime import datetime
 from PIL import Image
 
 import torch
 from torch import Tensor
 from torch.nn import Module, BCELoss
 from torch.optim import Adam, Optimizer
+#from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 
 #from torchvision.datasets import VOCSegmentation
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as func
 
-from torch.utils.data import Dataset, DataLoader
-
-from datetime import datetime
 from tqdm import tqdm
-import os
+
 #from pathlib import Path
 
 from image_dataset import ImageDataset
@@ -38,8 +39,6 @@ print(f"Device set to: {DEVICE}.")
 with torch.no_grad():
     torch.cuda.empty_cache()
 
-#import gc
-#gc.collect()
 
 def parse_command_line_args() -> Namespace:
     """Parse the command-line arguments.
@@ -70,7 +69,8 @@ def parse_command_line_args() -> Namespace:
     )
 
     parser.add_argument(
-        "--num_layers", help="Number of layers on each side of network. Default is 5 to match UNet.", 
+        "--num_layers", 
+        help="Number of layers on each side of network. Default is 5 to match UNet.",
         type=int, default=5
     )
 
@@ -82,8 +82,8 @@ def parse_command_line_args() -> Namespace:
     )
 
     parser.add_argument(
-        "--subsample", 
-        help="Number of training/validation records to use (for testing code). Default is 'all'.", 
+        "--subsample",
+        help="Number of training/validation records to use (for testing code). Default is 'all'.",
         type=str,
         default="all"
     )
@@ -120,6 +120,10 @@ def parse_command_line_args() -> Namespace:
 
 
 def change_working_dir():
+    """ Create an output directory for this run and use it as
+    the working directory.
+    """
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     my_folder = "UNet_{}".format(timestamp)
     
@@ -128,7 +132,7 @@ def change_working_dir():
 
 
 def write_command_line_args(args: Namespace):
-    ''' Write the command line arguments to a file
+    ''' Write the command line arguments to a file.
 
     Parameters
     ----------
@@ -136,20 +140,61 @@ def write_command_line_args(args: Namespace):
         Command-line arguments.
     '''
 
-    with open('command_line_args.txt', 'w') as f:
-        json.dump(args.__dict__, f, indent=2)
+    with open('command_line_args.txt', 'w') as cmd_file:
+        json.dump(args.__dict__, cmd_file, indent=2)
+
 
 def write_losses_to_file(epoch, training_loss, validation_loss, filename="losses.txt"):
+    ''' Write the training and validation losses for the epoch to a file.
+
+    Parameters
+    ----------
+    epoch : int 
+        Epoch number (0-indexed). Will be written as if 1-indexed.
+    training_loss : float
+        Training loss for epoch.
+    validation_loss : float
+        Validation loss for epoch.
+    filename : str
+        File name/path to write to. Default is "losses.txt".
+    '''
+
     f = open(filename, "a")
     f.write(f"Epoch {epoch+1} training loss: {training_loss:.3f}, validation loss: {validation_loss:.3f}\n")
     f.close()
 
+
 def write_acc_to_file(epoch, training_acc, validation_acc, filename="accuracy.txt"):
+    ''' Write the training and validation accuracies for the epoch to a file.
+    Parameters
+    ----------
+    epoch : int
+        Epoch number (0-indexed). Will be written as if 1-indexed.
+    training_acc : float
+        Training accuracy for epoch.
+    validation_acc : float
+        Validation accuracy for epoch.
+    filename : str
+        File name/path to write to. Default is "losses.txt".
+    '''
+
     f = open(filename, "a")
     f.write(f"Epoch {epoch+1} training accuracy: {training_acc:.3f}, validation accuracy: {validation_acc:.3f}\n")
     f.close()
 
+
 def get_file_names(file_dir):
+    ''' Return list of file names in a directory, sorted alphabetically.
+    Parameters
+    ----------
+    file_dir : str
+        (Path to) directory to use.
+    
+    Returns
+    -------
+    file_names : list
+        List of all file names in directory.
+    '''
 
     files = sorted(os.listdir(file_dir))
 
@@ -158,10 +203,12 @@ def get_file_names(file_dir):
     for file in files:
         file_names.append(os.path.join(file_dir, file))
 
-    return file_names    
+    return file_names
+
 
 def convert_mask_pil_to_tensor(args: Namespace, pil_img) -> Tensor:
     """Convert the target mask from B+W pillow image to tensor.
+    TO DO: Make this function general by editing line where we divide by 255.
 
     Parameters
     ----------
@@ -189,15 +236,16 @@ def convert_mask_pil_to_tensor(args: Namespace, pil_img) -> Tensor:
     target = torch.eye(args.num_classes)[grey.long()].permute(2, 0, 1).float()
     return target
 
+
 def data_subset(data_set, subsample):
     """Return a subsample of records from a dataset.
 
     Parameters
     ----------
-    args : Namespace
-        Command-line arguments.
     data_set : Dataset.
         The data set to sample from.
+    subsample : int
+        Number of records to subsample.
     
     Returns
     -------
@@ -216,27 +264,32 @@ def data_subset(data_set, subsample):
 
     return data_set
 
-def split_dataset(dataset, train_frac):
+def split_dataset(data_set, train_frac):
     '''
     Split a dataset into training and validation datasets.
+
+    Parameters
+    ----------
+    data_set : Dataset
+        Dataset to be split.
+    train_frac : float
+        Fraction of records to use for training.
+    
+    Returns
+    -------
+    Tuple of training and validation datasets.
     '''
-    train_num = int(train_frac * len(dataset))
-    val_num = len(dataset) - train_num
 
-    return torch.utils.data.random_split(dataset, [train_num, val_num])
+    train_num = int(train_frac * len(data_set))
+    val_num = len(data_set) - train_num
 
+    return torch.utils.data.random_split(data_set, [train_num, val_num])
 
-augment_transforms = transforms.Compose(
-    # Set to 572 x 572 to match original UNet paper
-    [   
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomResizedCrop(572, scale=(0.25, 1.0))
-    ]
-)
 
 def data_augmenter(images, targets):
-    """Transform a batch of images and targets using a random resized crop
-    
+    """Transform a batch of images and targets using whatever is in
+    Compose object "augment_transforms".
+
     Parameters
     ----------
     images : set of images
@@ -252,6 +305,15 @@ def data_augmenter(images, targets):
         Targets after transformation.
     """
 
+    augment_transforms = transforms.Compose(
+    # NOT CURRENTLY USED
+    # Set to 572 x 572 to match original UNet paper
+        [   
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomResizedCrop(572, scale=(0.25, 1.0))
+        ]
+    )
+
     img_concat = torch.cat((images, targets), dim=1)
     augmented = augment_transforms(img_concat)
     images_new = augmented[:, :3, :, :]
@@ -266,6 +328,21 @@ def get_data_sets(WSI_dir, mask_dir, subsample, train_frac):
     WSI and target mask directories.
     Assumes images and masks will be in the same order when
     sorted alphabetically.
+
+    Parameters
+    ----------
+    WSI_dir : str 
+        Path to whole-slide image directory
+    mask_dir : str
+        Path to mask directory
+    subsample : int
+        Subsample of data to use (integer or "all")
+    train_frac : float
+        Fraction of data to use for training (rest used for validation).
+
+    Returns
+    -------
+    Tuple of training and validation datasets.
     '''
 
     image_file_names = get_file_names(WSI_dir)
@@ -291,6 +368,7 @@ def get_data_sets(WSI_dir, mask_dir, subsample, train_frac):
 
     return split_dataset(data_set, train_frac)
 
+
 def get_data_loader(data_set, img_set, batch_size, loader_workers):
     """Return a dataloader to use in training/validation.
 
@@ -298,7 +376,7 @@ def get_data_loader(data_set, img_set, batch_size, loader_workers):
     ----------
     args : Namespace
         Command-line arguments.
-    img_set : Image Set to use. 
+    img_set : Image set to use. 
         "train" or "val"
     data_set : Dataset
         The dataset to be loaded. 
@@ -308,6 +386,7 @@ def get_data_loader(data_set, img_set, batch_size, loader_workers):
     data_loader : DataLoader
         The requested dataloader.
     """
+
     if img_set == 'train':
         shuffle_img = True
     elif img_set == 'val':
@@ -325,8 +404,20 @@ def get_data_loader(data_set, img_set, batch_size, loader_workers):
     return data_loader
     
 def calculate_accuracy(predictions, targets):
-    ''' Calculate pixel-wise accuracy of predictions. '''
-
+    ''' Calculate pixel-wise accuracy of predictions.
+    Parameters
+    ----------
+    predictions : Tensor (N x C x H x W)
+        Pixel-level predictions for set of images (softmax).
+    targets : Tensor (N x C x H x W)
+        Pixel-level targets for set of images (softmax).
+    
+    Returns
+    -------
+    accuracy : float 
+        Pixel-wise accuracy for set of images.
+    '''
+    
     _, pix_labels = torch.max(predictions, dim=1)
     _, pix_targets = torch.max(targets, dim=1)
     correct = torch.eq(pix_labels,pix_targets).int()
@@ -338,7 +429,7 @@ def calculate_accuracy(predictions, targets):
 def train_one_epoch(
     model: Module, data_loader: DataLoader, optimiser: Optimizer, loss_func: Module,
 ) -> float:
-    """Train `model` for a single epoch.
+    '''Train `model` for a single epoch.
 
     Vanilla Pytorch training loop.
 
@@ -348,13 +439,20 @@ def train_one_epoch(
         The model to train.
     data_loader : DataLoader
         The data to train on.
+    optimiser : Optimizer
+        The Optimizer to use
+    loss_func : Module
+        Loss function to use in loss calculation.
 
     Returns
     -------
     running_loss : float
         The total loss for this epoch.
+    accuracy : fload
+        The total accuracy for this epoch.
 
-    """
+    '''
+
     running_loss = 0.0
     running_acc = 0.0
     for images, targets in data_loader:
@@ -385,7 +483,7 @@ def train_one_epoch(
 def validate_one_epoch(
     model: Module, data_loader: DataLoader, loss_func: Module,
 ) -> float:
-    """Validate `model` for a single epoch.
+    '''Validate `model` for a single epoch.
 
     Parameters
     ----------
@@ -393,21 +491,25 @@ def validate_one_epoch(
         The model to train.
     data_loader : DataLoader
         The validation data loader.
+    loss_func : Module
+        Loss function to use in loss calculation.
 
     Returns
     -------
     running_vloss : float
         The total loss for this epoch.
+    accuracy : float
+        The total accuracy for this epoch.
 
-    """
-# We don't need gradients on to do reporting
+    '''
+    # We don't need gradients on to do reporting
     model.train(False)
 
     running_vloss = 0.0
     running_acc = 0.0
     with torch.no_grad():
         for imgs, targets in data_loader:
-            
+
             imgs, targets = imgs.to(DEVICE), targets.to(DEVICE)
 
             predictions = model(imgs).softmax(dim=1)
@@ -423,7 +525,7 @@ def validate_one_epoch(
 
 
 def save_model(args: Namespace, model):
-    """Save the model.
+    '''Save the model.
     Parameters
     ----------
     args : Namespace
@@ -433,13 +535,10 @@ def save_model(args: Namespace, model):
 
     Returns
     -------
-    model_path : Path name
+    model_path : str
         Path where model is saved.
-    """
-#    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-#    model_path = "{}_{}".format(args.model_root, timestamp)
-#    As model now saved in a folder with the timestamp, doesn't need a timestamp.
-#    If we do need it, we should re-write to use the same timestamp as the folder.
+    '''
+
     model_path = args.model_root
     try:
         torch.save(model, model_path)
@@ -450,14 +549,14 @@ def save_model(args: Namespace, model):
 
 
 def train_model(args: Namespace):
-    """Train a segmentation model.
+    '''Train a segmentation model.
 
     Parameters
     ----------
     args : Namespace
         The command-line arguments.
 
-    """
+    '''
     model = UNet(args.num_classes, num_layers=args.num_layers).to(DEVICE)
     optimiser = Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
     loss_func = BCELoss()
@@ -485,9 +584,9 @@ def train_model(args: Namespace):
 
 
 if __name__ == "__main__":
+
     command_line_args = parse_command_line_args()
     change_working_dir()
     write_command_line_args(command_line_args)
-    #print("DEVICE is now: {}".format(DEVICE))
     train_model(command_line_args)
     
