@@ -98,18 +98,18 @@ def parse_command_line_args() -> Namespace:
     )
 
     parser.add_argument(
-        "--WSI_dir",
-        help="Path to directory containing WSIs. Default is /home/rosie/epithelium_slides/output_images",
+        "--data_dir",
+        help="Path to directory containing WSIs. Default is /home/rosie/epithelium_slides/segmentation",
         type=str,
-        default="/home/rosie/epithelium_slides/output_images"
+        default="/home/rosie/epithelium_slides/segmentation"
     )
 
-    parser.add_argument(
-        "--mask_dir",
-        help="Path to directory containing segmentation masks. Default is /home/rosie/epithelium_slides/output_masks",
-        type=str,
-        default="/home/rosie/epithelium_slides/output_masks"
-    )
+    #parser.add_argument(
+    #    "--mask_dir",
+    #    help="Path to directory containing segmentation masks. Default is /home/rosie/epithelium_slides/output_masks",
+    #    type=str,
+    #    default="/home/rosie/epithelium_slides/output_masks"
+    #)
 
     parser.add_argument(
         "--model_root",
@@ -154,16 +154,37 @@ def write_acc_to_file(epoch, training_acc, validation_acc, filename="accuracy.tx
     f.close()
 
 
-def get_file_names(file_dir):
+def get_file_names(file_dir, img_set):
+    ''' List of files is without extensions as I'd originally intended to use the same
+    list for both images and masks, then realised I had named the mask files too
+    stupidly for this to work.
 
-    files = sorted(os.listdir(file_dir))
+    file_dir needs to contain subdirectories "ImageSets", "images" and "masks"
+    '''
+    #files = sorted(os.listdir(file_dir))
 
-    file_names = []
+    img_list = os.path.join(file_dir, "ImageSets", img_set + ".txt")
+    mask_list = os.path.join(file_dir, "ImageSets", img_set + "_mask.txt")
+
+    # Images
+    with open(img_list) as file_list:
+        files = file_list.readlines()
+
+    image_file_names = []
 
     for file in files:
-        file_names.append(os.path.join(file_dir, file))
+        image_file_names.append(os.path.join(file_dir, "images", file[:-1] + ".png"))
 
-    return file_names
+    # Masks
+    with open(mask_list) as file_list:
+        files = file_list.readlines()
+
+    mask_file_names = []
+
+    for file in files:
+        mask_file_names.append(os.path.join(file_dir, "masks", file[:-1] + ".png"))
+
+    return image_file_names, mask_file_names
 
 
 def convert_mask_pil_to_tensor(pil_img) -> Tensor:
@@ -266,7 +287,7 @@ def data_augmenter(images, targets):
     return images_new, targets_new
 
 
-def get_data_sets(WSI_dir, mask_dir, subsample, train_frac):
+def get_data_set(data_dir, img_set, subsample):
     '''
     Get training and validation data sets from paths to
     WSI and target mask directories.
@@ -274,8 +295,11 @@ def get_data_sets(WSI_dir, mask_dir, subsample, train_frac):
     sorted alphabetically.
     '''
 
-    image_file_names = get_file_names(WSI_dir)
-    mask_file_names = get_file_names(mask_dir)
+    if img_set not in ("train", "val", "trainval"):
+        raise ValueError (f"Image set option {img_set} is not acceptable.")
+
+    image_file_names, mask_file_names = get_file_names(data_dir, img_set)
+    #mask_file_names = get_file_names(mask_dir)
 
     image_transforms = transforms.Compose(
         [Image.open, 
@@ -295,7 +319,8 @@ def get_data_sets(WSI_dir, mask_dir, subsample, train_frac):
 
     data_set = data_subset(data_set, subsample)
 
-    return split_dataset(data_set, train_frac)
+#    return split_dataset(data_set, train_frac)
+    return data_set
 
 def get_data_loader(data_set, img_set, batch_size, loader_workers):
     """Return a dataloader to use in training/validation.
@@ -314,7 +339,7 @@ def get_data_loader(data_set, img_set, batch_size, loader_workers):
     data_loader : DataLoader
         The requested dataloader.
     """
-    if img_set == 'train':
+    if img_set == 'train' or img_set == 'trainval':
         shuffle_img = True
     elif img_set == 'val':
         shuffle_img = False
@@ -468,7 +493,8 @@ def train_model(args: Namespace):
     optimiser = Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
     loss_func = BCELoss()
 
-    training_set, validation_set = get_data_sets(args.WSI_dir, args.mask_dir, args.subsample, args.train_frac)
+    training_set = get_data_set(args.data_dir, "train", args.subsample)
+    validation_set = get_data_set(args.data_dir, "val", args.subsample)
 
     training_loader = get_data_loader(training_set, "train", args.bs, args.loader_workers)
     validation_loader = get_data_loader(validation_set, "val", args.bs, args.loader_workers)
