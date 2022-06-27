@@ -31,6 +31,7 @@ from tqdm import tqdm
 
 #from pathlib import Path
 
+from pystain import StainTransformer
 from image_dataset import ImageDataset
 from unet import UNet
 
@@ -256,8 +257,9 @@ def split_dataset(dataset, train_frac):
 augment_transforms = transforms.Compose(
     # Set to 572 x 572 to match original UNet paper
     [   
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomResizedCrop(572, scale=(0.25, 1.0))
+        transforms.RandomRotation((0,180)),
+#        transforms.RandomHorizontalFlip(),
+        transforms.RandomResizedCrop(584, scale=(0.5, 1.0))
     ]
 )
 
@@ -302,8 +304,10 @@ def get_data_set(data_dir, img_set, subsample):
     #mask_file_names = get_file_names(mask_dir)
 
     image_transforms = transforms.Compose(
-        [Image.open, 
-        transforms.ToTensor()]
+        [#Image.open,
+        StainTransformer(normalise=True, jitter=True, jitter_strength=0.3), 
+        #transforms.ToTensor()
+        ]
     )
     target_transforms = transforms.Compose(
         [Image.open, 
@@ -408,9 +412,10 @@ def train_one_epoch(
         running_loss += loss.item()
         running_acc += calculate_accuracy(predictions, targs)
     
+    mean_loss = running_loss / len(data_loader)
     accuracy = running_acc / len(data_loader)
 
-    return running_loss, accuracy
+    return mean_loss, accuracy
 
 
 def validate_one_epoch(
@@ -448,9 +453,10 @@ def validate_one_epoch(
             running_vloss += loss.item()
             running_acc += calculate_accuracy(predictions, targets)
     
+        mean_vloss = running_vloss / len(data_loader) 
         accuracy = running_acc / len(data_loader)
 
-    return running_vloss, accuracy
+    return mean_vloss, accuracy
 
 
 def save_model(args: Namespace, model):
@@ -506,10 +512,10 @@ def train_model(args: Namespace):
 
         print(f"EPOCH: {epoch+1}")
 
-        running_loss, accuracy = train_one_epoch(model, training_loader, optimiser, loss_func)
-        running_vloss, vaccuracy = validate_one_epoch(model, validation_loader, loss_func)
+        mean_loss, accuracy = train_one_epoch(model, training_loader, optimiser, loss_func)
+        mean_vloss, vaccuracy = validate_one_epoch(model, validation_loader, loss_func)
 
-        write_losses_to_file(epoch, training_loss = running_loss, validation_loss = running_vloss)
+        write_losses_to_file(epoch, training_loss = mean_loss, validation_loss = mean_vloss)
         write_acc_to_file(epoch, training_acc = accuracy, validation_acc = vaccuracy)
 
     model_file = save_model(args, model)
