@@ -3,8 +3,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json
 
-os.chdir("/mnt/c/Users/rosie/WSL/seg_epi/UNet_20220623_130057")
-
 def get_loss_acc(file_name):
     '''
     Reads in losses / accuracies from files output by seg_epi.py or seg_UNet.py
