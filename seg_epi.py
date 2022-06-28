@@ -34,6 +34,7 @@ from tqdm import tqdm
 from pystain import StainTransformer
 from image_dataset import ImageDataset
 from unet import UNet
+import plot_loss_acc
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Device set to: {DEVICE}.")
@@ -526,6 +527,10 @@ if __name__ == "__main__":
     command_line_args = parse_command_line_args()
     change_working_dir()
     write_command_line_args(command_line_args)
-    #print("DEVICE is now: {}".format(DEVICE))
     train_model(command_line_args)
+
+    fig = plot_loss_acc.plot_losses_and_accuracies()
+    fig.savefig("loss_acc.png", facecolor = "white")
+    plt.close(fig)
+
     
