@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json
 
+
 def get_loss_acc(file_name):
     '''
     Reads in losses / accuracies from files output by seg_epi.py or seg_UNet.py

@@ -256,11 +256,11 @@ def split_dataset(dataset, train_frac):
 
 
 augment_transforms = transforms.Compose(
-    # Set to 572 x 572 to match original UNet paper
+    # Set to 284 x 284 (half original UNet paper)
     [   
         transforms.RandomRotation((0,180)),
 #        transforms.RandomHorizontalFlip(),
-        transforms.RandomResizedCrop(584, scale=(0.5, 1.0))
+        transforms.RandomResizedCrop(284, scale=(0.5, 1.0))
     ]
 )
 
@@ -293,9 +293,7 @@ def data_augmenter(images, targets):
 def get_data_set(data_dir, img_set, subsample):
     '''
     Get training and validation data sets from paths to
-    WSI and target mask directories.
-    Assumes images and masks will be in the same order when
-    sorted alphabetically.
+    directory holding "images" and "masks" directories.
     '''
 
     if img_set not in ("train", "val", "trainval"):
