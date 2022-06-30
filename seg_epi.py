@@ -124,7 +124,7 @@ def parse_command_line_args() -> Namespace:
 
 
 def change_working_dir():
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")[:-3]
     my_folder = "UNet_{}".format(timestamp)
     
     os.mkdir(my_folder)
@@ -529,6 +529,6 @@ if __name__ == "__main__":
 
     fig = plot_loss_acc.plot_losses_and_accuracies()
     fig.savefig("loss_acc.png", facecolor = "white")
-    plt.close(fig)
+    #plt.close(fig)
 
     
