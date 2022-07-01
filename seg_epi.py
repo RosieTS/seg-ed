@@ -322,7 +322,7 @@ def get_data_set(data_dir, img_set, subsample):
         image_transforms = transforms.Compose(
             [StainTransformer(normalise=True, jitter=True, jitter_strength=0.3),
             transforms.Resize([568, 568])]
-        )ls
+        )
     else:
         image_transforms = transforms.Compose(
             [#Image.open,
