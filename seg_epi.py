@@ -321,8 +321,8 @@ def get_data_set(data_dir, img_set, subsample):
     if "Lizard" in data_dir:
         image_transforms = transforms.Compose(
             [StainTransformer(normalise=True, jitter=True, jitter_strength=0.3),
-            transforms.Resize([572, 572])]
-        )
+            transforms.Resize([568, 568])]
+        )ls
     else:
         image_transforms = transforms.Compose(
             [#Image.open,
@@ -334,7 +334,7 @@ def get_data_set(data_dir, img_set, subsample):
     if "Lizard" in data_dir:
         target_transforms = transforms.Compose(
             [convert_lizard_file_to_tensor,
-            transforms.Resize([284, 284])]
+            transforms.Resize([568, 568])]
         )
     else:
         target_transforms = transforms.Compose(
