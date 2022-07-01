@@ -100,6 +100,7 @@ def draw_mask_on_orig(orig_image, edges):
 
     return orig_with_mask
 
+
 def save_pretty_pictures(model: Module, data_set: Dataset, num_image):
     """Return a single image + target from dataset.
     Parameters
@@ -159,4 +160,5 @@ if __name__ == "__main__":
     data_set = get_data_set(r"/mnt/c/Users/rosie/WSL/epithelium_slides", "trainval", subsample = "all")
 
     model = torch.load("model", map_location=DEVICE)
+    model.eval()
     save_pretty_pictures(model, data_set, num_image=5)

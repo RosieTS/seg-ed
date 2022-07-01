@@ -156,6 +156,12 @@ def write_acc_to_file(epoch, training_acc, validation_acc, filename="accuracy.tx
     f.close()
 
 
+def write_dice_to_file(epoch, training_dice, validation_dice, filename="dice.txt"):
+    f = open(filename, "a")
+    f.write(f"Epoch {epoch+1} training dice: {training_dice:.3f}, validation dice: {validation_dice:.3f}\n")
+    f.close()
+
+
 def get_file_names(file_dir, img_set):
     ''' List of files is without extensions as I'd originally intended to use the same
     list for both images and masks, then realised I had named the mask files too
@@ -357,7 +363,8 @@ def get_data_loader(data_set, img_set, batch_size, loader_workers):
     )
 
     return data_loader
-    
+
+
 def calculate_accuracy(predictions, targets):
     ''' Calculate pixel-wise accuracy of predictions. '''
 
@@ -367,6 +374,18 @@ def calculate_accuracy(predictions, targets):
     accuracy = correct.sum() / correct.numel()
     
     return accuracy
+
+
+def calculate_dice(predictions, targets):
+    ''' Calculate dice score for predictions. '''
+    smooth = 1.
+     
+    _, pix_labels = torch.max(predictions, dim=1)
+    _, pix_targets = torch.max(targets, dim=1)
+    intersection = torch.eq(pix_labels,pix_targets).int().sum()
+    dice = 2 * (intersection + smooth) / (pix_labels.sum() + pix_targets.sum() + smooth)
+    
+    return dice
 
 
 def train_one_epoch(
@@ -391,6 +410,7 @@ def train_one_epoch(
     """
     running_loss = 0.0
     running_acc = 0.0
+    running_dice = 0.0
     for images, targets in data_loader:
 
         ### Include "if" to say if want augmenting. ###
@@ -410,11 +430,13 @@ def train_one_epoch(
 
         running_loss += loss.item()
         running_acc += calculate_accuracy(predictions, targs)
+        running_dice += calculate_dice(predictions, targs)
     
     mean_loss = running_loss / len(data_loader)
     accuracy = running_acc / len(data_loader)
+    dice = running_dice / len(data_loader)
 
-    return mean_loss, accuracy
+    return mean_loss, accuracy, dice
 
 
 def validate_one_epoch(
@@ -440,6 +462,7 @@ def validate_one_epoch(
 
     running_vloss = 0.0
     running_acc = 0.0
+    running_dice = 0.0
     with torch.no_grad():
         for imgs, targets in data_loader:
             
@@ -451,11 +474,13 @@ def validate_one_epoch(
 
             running_vloss += loss.item()
             running_acc += calculate_accuracy(predictions, targets)
+            running_dice += calculate_dice(predictions, targets)
     
         mean_vloss = running_vloss / len(data_loader) 
         accuracy = running_acc / len(data_loader)
+        dice = running_dice / len(data_loader)
 
-    return mean_vloss, accuracy
+    return mean_vloss, accuracy, dice
 
 
 def save_model(args: Namespace, model):
@@ -511,11 +536,12 @@ def train_model(args: Namespace):
 
         print(f"EPOCH: {epoch+1}")
 
-        mean_loss, accuracy = train_one_epoch(model, training_loader, optimiser, loss_func)
-        mean_vloss, vaccuracy = validate_one_epoch(model, validation_loader, loss_func)
+        mean_loss, accuracy, dice = train_one_epoch(model, training_loader, optimiser, loss_func)
+        mean_vloss, vaccuracy, vdice = validate_one_epoch(model, validation_loader, loss_func)
 
         write_losses_to_file(epoch, training_loss = mean_loss, validation_loss = mean_vloss)
         write_acc_to_file(epoch, training_acc = accuracy, validation_acc = vaccuracy)
+        write_dice_to_file(epoch, training_dice = dice, validation_dice = dice)
 
     model_file = save_model(args, model)
     print(f'Model saved to {model_file}')
