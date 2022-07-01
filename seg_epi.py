@@ -15,6 +15,7 @@ import json
 import os
 from datetime import datetime
 from PIL import Image
+import scipy.io as sio
 
 import torch
 from torch import Tensor
@@ -92,12 +93,12 @@ def parse_command_line_args() -> Namespace:
         default="all"
     )
 
-    parser.add_argument(
-        "--train_frac",
-        help="Fraction of dataset to use as training data. Default is 0.7",
-        type=float,
-        default=0.7
-    )
+#    parser.add_argument(
+#        "--train_frac",
+#        help="Fraction of dataset to use as training data. Default is 0.7",
+#        type=float,
+#        default=0.7
+#    )
 
     parser.add_argument(
         "--data_dir",
@@ -105,13 +106,6 @@ def parse_command_line_args() -> Namespace:
         type=str,
         default="/home/rosie/epithelium_slides/segmentation"
     )
-
-    #parser.add_argument(
-    #    "--mask_dir",
-    #    help="Path to directory containing segmentation masks. Default is /home/rosie/epithelium_slides/output_masks",
-    #    type=str,
-    #    default="/home/rosie/epithelium_slides/output_masks"
-    #)
 
     parser.add_argument(
         "--model_root",
@@ -189,8 +183,12 @@ def get_file_names(file_dir, img_set):
 
     mask_file_names = []
 
-    for file in files:
-        mask_file_names.append(os.path.join(file_dir, "masks", file[:-1] + ".png"))
+    if "Lizard" in file_dir:
+        for file in files:
+            mask_file_names.append(os.path.join(file_dir, "masks", file[:-1] + ".mat"))
+    else:
+        for file in files:
+            mask_file_names.append(os.path.join(file_dir, "masks", file[:-1] + ".png"))
 
     return image_file_names, mask_file_names
 
@@ -223,6 +221,18 @@ def convert_mask_pil_to_tensor(pil_img) -> Tensor:
     num_classes = 2
     target = torch.eye(num_classes)[grey.long()].permute(2, 0, 1).float()
     return target
+
+
+def convert_lizard_file_to_tensor(label_file):
+    label = sio.loadmat(label_file)
+    inst_map = label['inst_map'] 
+    inst_map[inst_map > 0] = 1
+
+    num_classes = 2
+    target = torch.eye(num_classes)[inst_map].permute(2, 0, 1).float()
+
+    return target
+
 
 def data_subset(data_set, subsample):
     """Return a subsample of records from a dataset.
@@ -308,16 +318,29 @@ def get_data_set(data_dir, img_set, subsample):
     image_file_names, mask_file_names = get_file_names(data_dir, img_set)
     #mask_file_names = get_file_names(mask_dir)
 
-    image_transforms = transforms.Compose(
-        [#Image.open,
-        StainTransformer(normalise=True, jitter=True, jitter_strength=0.3), 
-        #transforms.ToTensor()
-        ]
-    )
-    target_transforms = transforms.Compose(
-        [Image.open, 
-        convert_mask_pil_to_tensor]
-    )
+    if "Lizard" in data_dir:
+        image_transforms = transforms.Compose(
+            [StainTransformer(normalise=True, jitter=True, jitter_strength=0.3),
+            transforms.Resize([572, 572])]
+        )
+    else:
+        image_transforms = transforms.Compose(
+            [#Image.open,
+            StainTransformer(normalise=True, jitter=True, jitter_strength=0.3), 
+            #transforms.ToTensor()
+            ]
+        )
+
+    if "Lizard" in data_dir:
+        target_transforms = transforms.Compose(
+            [convert_lizard_file_to_tensor,
+            transforms.Resize([284, 284])]
+        )
+    else:
+        target_transforms = transforms.Compose(
+            [Image.open, 
+            convert_mask_pil_to_tensor]
+        )
 
     data_set = ImageDataset(
         inputs = image_file_names,
