@@ -48,7 +48,7 @@ def parse_command_line_args() -> Namespace:
 
 command_line_args = parse_command_line_args()
 
-os.chdir("../seg_epi/UNet_20220629_151353")
+#os.chdir("../seg_epi/UNet_20220629_151353")
 
 # Get dataset
 validation_set = get_data_set(command_line_args.data_dir, "val", "all")
