@@ -1,3 +1,10 @@
+from argparse import (
+    ArgumentDefaultsHelpFormatter,
+    ArgumentParser,
+    Namespace,
+    BooleanOptionalAction,
+)
+
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,6 +21,28 @@ import torchvision.transforms.functional as func
 
 #from unet import UNet
 from seg_epi import get_data_set
+
+
+def parse_command_line_args() -> Namespace:
+    """Parse the command-line arguments.
+
+    Returns
+    -------
+    Namespace
+        The command-line arguments.
+
+    """
+    parser = ArgumentParser(
+        description="Image saving example",
+        formatter_class=ArgumentDefaultsHelpFormatter,
+    )
+
+    parser.add_argument("--model_path", help="Path to model file used", type=str, default="model")
+
+    parser.add_argument("--image_path", help="Path to image file directory", type=str, default="")
+
+    return parser.parse_args()
+
 
 def get_single_image(data_set: Dataset):
     """Return a single image + target from dataset.
@@ -155,10 +184,10 @@ def save_pretty_pictures(model: Module, data_set: Dataset, num_image):
 if __name__ == "__main__":
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device set to: {DEVICE}.")
-    #command_line_args = parse_command_line_args()
+    command_line_args = parse_command_line_args()
 
-    data_set = get_data_set(r"/mnt/c/Users/rosie/WSL/epithelium_slides", "trainval", subsample = "all")
+    data_set = get_data_set(command_line_args.image_path, "val", subsample = "all")
 
-    model = torch.load("model", map_location=DEVICE)
+    model = torch.load(command_line_args.model_path, map_location=DEVICE)
     model.eval()
     save_pretty_pictures(model, data_set, num_image=5)

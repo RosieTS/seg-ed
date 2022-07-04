@@ -19,7 +19,7 @@ import numpy as np
 from unet import UNet
 
 from seg_UNet import get_data_set_and_loader
-from seg_epi import get_data_sets
+from seg_epi import get_data_set
 
 def parse_command_line_args() -> Namespace:
     """Parse the command-line arguments.
@@ -36,6 +36,8 @@ def parse_command_line_args() -> Namespace:
     )
 
     parser.add_argument("--model_path", help="Path to model file used", type=str, default="model")
+
+    parser.add_argument("--image_path", help="Path to image file directory", type=str, default="")
 
     parser.add_argument("--dataset", help="Dataset used ('VOC' or 'epi')", type=str, default="epi")
 
@@ -193,12 +195,7 @@ if __name__ == "__main__":
             command_line_args, img_set = "val"
             )
     elif (command_line_args.dataset.lower() == "epi"):
-        validation_set, _ = get_data_sets(
-            "../output_images",
-            "../output_masks",
-            subsample = "all",
-            train_frac=1.0
-            )
+        validation_set = get_data_set(command_line_args.image_path, "val", "all")
     
     model = torch.load(command_line_args.model_path, map_location=DEVICE)
     save_pretty_pictures(model, validation_set, num_image=5)

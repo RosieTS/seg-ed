@@ -102,14 +102,21 @@ def parse_command_line_args() -> Namespace:
 
     parser.add_argument(
         "--data_dir",
-        help="Path to directory containing WSIs. Default is /home/rosie/epithelium_slides/segmentation",
+        help="Path to directory containing WSIs. Default is '../../epithelium_slides'",
         type=str,
-        default="/home/rosie/epithelium_slides/segmentation"
+        default="../../epithelium_slides"
+    )
+
+    parser.add_argument(
+        "--model_path",
+        help="Model name/path if model to be loaded, or ''/'none'. Default is ''.",
+        type=str,
+        default=""
     )
 
     parser.add_argument(
         "--model_root",
-        help="Model name root for saving/loading. Default is 'model'.",
+        help="Model name/path for saving. Default is 'model'.",
         type=str,
         default="model"
     )
@@ -542,7 +549,17 @@ def train_model(args: Namespace):
         The command-line arguments.
 
     """
-    model = UNet(args.num_classes, num_layers=args.num_layers).to(DEVICE)
+
+    if args.model_path == "" or args.model_path == "none":
+        model = UNet(args.num_classes, num_layers=args.num_layers).to(DEVICE)
+    else:
+        model = torch.load(args.model_path, map_location=DEVICE)
+
+    if args.num_layers != model.__dict__["num_layers"]:
+        print(f"WARNING: num_layers in command line ({args.num_layers})"\
+            f" does not match num_layers in loaded model ({model.__dict__['num_layers']})."\
+            " Using model num_layers.")
+
     optimiser = Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
     loss_func = BCELoss()
 
