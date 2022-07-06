@@ -35,11 +35,10 @@ def get_image_and_mask_names(WSI_dir, mask_dir):
         image_file_names.append(os.path.join(WSI_dir, file))
         mask_file_names.append(os.path.join(mask_dir, file[0:-4] + "_epithelium_mask.tif"))
 
-    # Won't work if only 1 file in each dir.
     print(image_file_names)
     print(mask_file_names)
 
-    return image_file_names, mask_file_names
+    return list(zip(image_file_names, mask_file_names))
 
 
 def get_patch_origin_coords(image, patch_size, stride, level_dim):
