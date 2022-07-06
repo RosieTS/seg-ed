@@ -102,7 +102,7 @@ def save_patch(patch, output_dir, image_file_name):
     patch_file_name = patch_file_name + "_" + str(x) + "_" + str(y) + ".png"
 
     patch.save(patch_file_name)
-    print("Saved to: " + patch_file_name)
+    #print("Saved to: " + patch_file_name)
 
 
 if __name__ == "__main__":
@@ -128,8 +128,8 @@ if __name__ == "__main__":
         print(mask_file_name)
         image = openslide.OpenSlide(image_file_name)
         mask = openslide.OpenSlide(mask_file_name)
-        patch_size = (284, 284)
-        stride = (142, 142)
+        patch_size = (1136/ 2**level_dim, 1136/ 2**level_dim)
+        stride = (patch_size[0] / 2, patch_size[1] / 2)
     
         #print(image.level_dimensions)
         #print(mask.level_dimensions)
