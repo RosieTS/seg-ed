@@ -128,8 +128,8 @@ if __name__ == "__main__":
         print(mask_file_name)
         image = openslide.OpenSlide(image_file_name)
         mask = openslide.OpenSlide(mask_file_name)
-        patch_size = (1136/ 2**level_dim, 1136/ 2**level_dim)
-        stride = (patch_size[0] / 2, patch_size[1] / 2)
+        patch_size = (int(1136/ 2**level_dim), int(1136/ 2**level_dim))
+        stride = (int(patch_size[0] / 2), int(patch_size[1] / 2))
     
         #print(image.level_dimensions)
         #print(mask.level_dimensions)
