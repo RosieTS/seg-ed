@@ -70,6 +70,20 @@ def parse_command_line_args() -> Namespace:
         default="/home/ret58/rds/hpc-work/hover_net/consep_hi_res/json/"
     )
 
+    parser.add_argument(
+        "--bs",
+        help="Batch size for running predictions.",
+        type=int,
+        default=8
+    )
+
+    parser.add_argument(
+        "--lw",
+        help="Loader workers for running predictions.",
+        type=int,
+        default=4
+    )
+
     return parser.parse_args()
 
 
@@ -77,8 +91,15 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Device set to: {DEVICE}.")
 
 def get_image_file_names(image_file_path):
+    
+    if image_file_path[-4:] == ".png":
+        image_file_names = glob.glob(image_file_path)
+    elif "." not in image_file_path:
+        glob_pattern = os.path.join(image_file_path, '*')
+        image_file_names = glob.glob(glob_pattern)      
+    else:
+        raise ValueError("image_path should be a directory or a set of .png files.")
 
-    image_file_names = glob.glob(image_file_path)
     image_file_names.sort()
     
     return image_file_names
@@ -217,7 +238,7 @@ def get_epithelium_nuclei(json_file_name, epi_mask):
         centroid = np.around(inst_info['centroid']).astype(int)
         contour = inst_info['contour']
 
-        if epi_mask[centroid[1], centroid[0]] == 255:
+        if epi_mask[centroid[1], centroid[0]] == 255 and len(contour) >=5:
             epi_nuc_uids.append(inst)
             epi_nuc_centroids.append(centroid)
             epi_nuc_contours.append(contour)
@@ -247,21 +268,50 @@ def output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contou
     return df
 
 
-def run_model_for_predictions(model_path, image_file_names):
+def run_model_for_predictions(model_path, image_file_names, batch_size, loader_workers):
 
     model = torch.load(model_path, map_location=DEVICE)
     model.eval()
 
     dataset = get_dataset(image_file_names)
-    data_loader = get_data_loader(dataset, 2, 1)
+    data_loader = get_data_loader(dataset, batch_size, loader_workers)
     
     output_predictions(model, data_loader, image_file_names)
     # No return statement as outputs predictions to files    
 
 
+def save_sample_image(image_file, json_file_path, tile_id, epi_mask, epi_nuc_contours):
+
+    hov_dir = os.path.abspath(os.path.join(json_file_path, os.pardir))
+    overlay_file = os.path.join(hov_dir, 'overlay', tile_id + '.png')
+    overlay = cv2.imread(overlay_file)
+    overlay = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
+
+    image = cv2.imread(image_file)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, (1136,1136), interpolation = cv2.INTER_NEAREST)
+
+    ellipses = [cv2.fitEllipse(np.array(contour)) for contour in epi_nuc_contours]
+    for ellipse in ellipses:
+        image = cv2.ellipse(image, ellipse, (255,0,0), 2)
+            
+    fig, axes = plt.subplots(ncols = 3, sharey = True, figsize = (18,6))
+            
+    axes[0].imshow(overlay)  
+    axes[1].imshow(epi_mask)
+    axes[2].imshow(image)
+
+    for ax in axes:
+        ax.axis('off')
+
+    plt.savefig(get_basename(image_file) + "epi_nuc.png")
+
+
 def loop_through_tiles(image_file_names, json_file_path):
 
     epi_nuc_data = pd.DataFrame()
+
+    rand_image_file = np.random.choice(image_file_names)
 
     for image_file in image_file_names:
 
@@ -274,15 +324,26 @@ def loop_through_tiles(image_file_names, json_file_path):
         tile_id = get_basename(image_file)
         json_file_name = get_json_name(tile_id, json_file_path)
         temp_file = os.path.join('tmp', tile_id + '.npy')
-        
+
+        if not os.path.exists(json_file_name):
+            print(f"File {json_file_name} does not exist.")
+            continue
+                 
         epi_mask = open_and_rescale_prediction(temp_file)
         epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours = get_epithelium_nuclei(json_file_name, epi_mask)
-        
+            
+        if len(epi_nuc_uids) == 0:
+            print(f"No epithelial nuclei identified in file {json_file_name}.")
+            continue
+
         df = output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours)
         df.to_pickle('tmp/epi_nuc_' + tile_id + '.pkl')
 
         epi_nuc_data = pd.concat([epi_nuc_data, df], ignore_index = True)
 
+        if image_file == rand_image_file:
+            save_sample_image(image_file, json_file_path, tile_id, epi_mask, epi_nuc_contours)
+      
     epi_nuc_data.to_pickle('epi_nuc_data.pkl')
 
     return epi_nuc_data
@@ -293,8 +354,10 @@ if __name__ == "__main__":
     command_line_args = parse_command_line_args()
 
     image_file_names = get_image_file_names(command_line_args.image_path)
+    print(image_file_names[0])
 
-    run_model_for_predictions(command_line_args.model_path, image_file_names)
+    run_model_for_predictions(command_line_args.model_path, image_file_names, 
+        command_line_args.bs, command_line_args.lw)
 
     epi_nuc_data = loop_through_tiles(image_file_names, command_line_args.json_path)
 

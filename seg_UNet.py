@@ -3,6 +3,8 @@
 Apart from U-net, all the below is taken from the tutorial below:
 https://pytorch.org/tutorials/beginner/introyt/trainingyt.html
 
+Dataset used is the VOCSegmentation dataset built into PyTorch.
+
 I used the below to figure out that the target images are in "p" mode,
 which means "palettised". Which is basically one channel with numbers
 representing palette items, so I can just use that like a greyscale.
@@ -15,6 +17,7 @@ The pixel classes are 1-20 for type of object, plus 0 for background
 and 255 for void/unlabelled.
 http://host.robots.ox.ac.uk/pascal/VOC/voc2012/segexamples/index.html
 """
+
 from argparse import (
     ArgumentDefaultsHelpFormatter,
     ArgumentParser,
@@ -79,7 +82,8 @@ def parse_command_line_args() -> Namespace:
     parser.add_argument("--wd", help="Weight decay.", type=float, default=0)
 
     parser.add_argument(
-        "--num_classes", help="Number of classes.", type=int, default=22
+        "--num_classes", help="Number of classes. Use 2 for semantic seg.", 
+        type=int, default=22
     )
 
     parser.add_argument(
@@ -93,6 +97,14 @@ def parse_command_line_args() -> Namespace:
         default=False,
         action=BooleanOptionalAction,
         help="Should we download/unpack the data? Default is False.",
+    )
+
+    parser.add_argument(
+        "--augs",
+        type=bool,
+        default=False,
+        action=BooleanOptionalAction,
+        help="Should we perform augmentations on training data? Default is False.",
     )
 
     parser.add_argument(
@@ -131,17 +143,29 @@ def write_command_line_args(args: Namespace):
     with open('command_line_args.txt', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
+
+def change_working_dir():
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")[:-3]
+    my_folder = "UNet_{}".format(timestamp)
+    
+    os.mkdir(my_folder)
+    os.chdir(my_folder)
+
+
 def write_losses_to_file(epoch, training_loss, validation_loss, filename="losses.txt"):
     f = open(filename, "a")
     f.write(f"Epoch {epoch+1} training loss: {training_loss:.3f}, validation loss: {validation_loss:.3f}\n")
     f.close()
+
 
 def write_acc_to_file(epoch, training_acc, validation_acc, filename="accuracy.txt"):
     f = open(filename, "a")
     f.write(f"Epoch {epoch+1} training accuracy: {training_acc:.3f}, validation accuracy: {validation_acc:.3f}\n")
     f.close()
 
-def convert_target_pil_to_tensor(pil_img) -> Tensor:
+
+class convert_target_pil_to_tensor():
+
     """Convert the target mask from pillow image to tensor.
 
     Parameters
@@ -164,26 +188,23 @@ def convert_target_pil_to_tensor(pil_img) -> Tensor:
         etc.
 
     """
-    grey = func.pil_to_tensor(pil_img).squeeze()
-    grey[grey == 255] = 21
-    num_classes = 22
-    target = torch.eye(num_classes)[grey.long()].permute(2, 0, 1).float()
-    return target
+    def __init__(self, num_classes):
+        
+        # Semantic segmentation is actually 3 classes, to include void.
+        self.num_classes = max(num_classes,3)
 
+    def __call__(self, pil_img):
 
-img_transforms = transforms.Compose(
-    [
-        transforms.ToTensor(),
-        # Resizing because images all different sizing. Could instead pad or make custom collate.
-        # Set to 572 x 572 to match original UNet paper
-        transforms.Resize([572, 572]),
-    ]
-)
+        grey = func.pil_to_tensor(pil_img).squeeze()
 
-target_transforms = transforms.Compose(
-    # Set to 572 x 572 to match original UNet paper
-    [convert_target_pil_to_tensor, transforms.Resize([572, 572])]
-)
+        if self.num_classes == 3:
+
+            grey[(grey < 255) * (grey > 0)] = 1
+        
+        grey[grey == 255] = self.num_classes - 1
+        
+        target = torch.eye(self.num_classes)[grey.long()].permute(2, 0, 1).float()
+        return target
 
 
 def get_data_set_and_loader(args: Namespace, img_set) -> Tuple[Dataset, DataLoader]:
@@ -212,9 +233,22 @@ def get_data_set_and_loader(args: Namespace, img_set) -> Tuple[Dataset, DataLoad
         raise ValueError(f"Image set option {img_set} is not acceptable.")
 
 
+    img_transforms = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            # Resizing because images all different sizing. Could instead pad or make custom collate.
+            # Set to 572 x 572 to match original UNet paper
+            transforms.Resize([572, 572]),
+        ]
+    )
+
+    target_transforms = transforms.Compose(
+        # Set to 572 x 572 to match original UNet paper
+        [convert_target_pil_to_tensor(args.num_classes), transforms.Resize([572, 572])]
+    )
+
     data_set = VOCSegmentation(
         "../data",
-        #image_set="train",
         image_set=img_set,
         download=args.data_download,
         transform=img_transforms,
@@ -259,39 +293,6 @@ def data_subset(args: Namespace, data_set):
         raise ValueError("Subsample requested is not an integer or 'all'. Using whole dataset.")
 
     return data_set
-
-
-def train_model(args: Namespace):
-    """Train a segmentation model.
-
-    Parameters
-    ----------
-    args : Namespace
-        The command-line arguments.
-
-    """
-    model = UNet(args.num_classes, num_layers=args.num_layers).to(DEVICE)
-    optimiser = Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
-    loss_func = BCELoss()
-
-    training_set, training_loader = get_data_set_and_loader(args, img_set = "train")
-    validation_set, validation_loader = get_data_set_and_loader(args, img_set = "val")
-
-    print("Training set has {} instances".format(len(training_set)))
-    print("Validation set has {} instances".format(len(validation_set)))
-
-    for epoch in tqdm(range(args.epochs)):
-
-        print(f"EPOCH: {epoch+1}")
-
-        running_loss, accuracy = train_one_epoch(model, training_loader, optimiser, loss_func)
-        running_vloss, vaccuracy = validate_one_epoch(model, validation_loader, loss_func)
-
-        write_losses_to_file(epoch, training_loss = running_loss, validation_loss = running_vloss)
-        write_acc_to_file(epoch, training_acc = accuracy, validation_acc = vaccuracy)
-
-    model_file = save_model(args, model)
-    print(f'Model saved to {model_file}')
 
 
 augment_transforms = transforms.Compose(
@@ -341,7 +342,8 @@ def calculate_accuracy(predictions, targets):
 
 
 def train_one_epoch(
-    model: Module, data_loader: DataLoader, optimiser: Optimizer, loss_func: Module,
+    model: Module, data_loader: DataLoader, optimiser: Optimizer, 
+    loss_func: Module, augment : bool,
 ) -> float:
     """Train `model` for a single epoch.
 
@@ -365,7 +367,10 @@ def train_one_epoch(
     for images, targets in data_loader:
 
         ### Include "if" to say if want augmenting. ###
-        imgs, targs = data_augmenter(images, targets)
+        if augment:
+            imgs, targs = data_augmenter(images, targets)
+        else:
+            imgs, targs = images, targets
 
         optimiser.zero_grad()
 
@@ -382,9 +387,10 @@ def train_one_epoch(
         running_loss += loss.item()
         running_acc += calculate_accuracy(predictions, targs)
     
+    mean_loss = running_loss / len(data_loader)
     accuracy = running_acc / len(data_loader)
 
-    return running_loss, accuracy
+    return mean_loss, accuracy
 
 
 def validate_one_epoch(
@@ -422,9 +428,10 @@ def validate_one_epoch(
             running_vloss += loss.item()
             running_acc += calculate_accuracy(predictions, targets)
     
+        mean_vloss = running_vloss / len(data_loader)
         accuracy = running_acc / len(data_loader)
 
-    return running_vloss, accuracy
+    return mean_vloss, accuracy
 
 
 def save_model(args: Namespace, model):
@@ -441,10 +448,7 @@ def save_model(args: Namespace, model):
     model_path : Path name
         Path where model is saved.
     """
-#    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-#    model_path = "{}_{}".format(args.model_root, timestamp)
-#    As model now saved in a folder with the timestamp, doesn't need a timestamp.
-#    If we do need it, we should re-write to use the same timestamp as the folder.
+
     model_path = args.model_root
     try:
         torch.save(model, model_path)
@@ -454,12 +458,40 @@ def save_model(args: Namespace, model):
     return model_path
 
 
-def change_working_dir():
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    my_folder = "UNet_{}".format(timestamp)
-    
-    os.mkdir(my_folder)
-    os.chdir(my_folder) 
+def train_model(args: Namespace):
+    """Train a segmentation model.
+
+    Parameters
+    ----------
+    args : Namespace
+        The command-line arguments.
+
+    """
+    model = UNet(args.num_classes, num_layers=args.num_layers).to(DEVICE)
+    optimiser = Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    loss_func = BCELoss()
+
+    training_set, training_loader = get_data_set_and_loader(args, img_set = "train")
+    validation_set, validation_loader = get_data_set_and_loader(args, img_set = "val")
+
+    print("Training set has {} instances".format(len(training_set)))
+    print("Validation set has {} instances".format(len(validation_set)))
+
+    for epoch in tqdm(range(args.epochs)):
+
+        print(f"EPOCH: {epoch+1}")
+
+        running_loss, accuracy = train_one_epoch(model, training_loader, optimiser, 
+                                                loss_func, args.augs)
+        running_vloss, vaccuracy = validate_one_epoch(model, validation_loader, loss_func)
+
+        write_losses_to_file(epoch, training_loss = running_loss, validation_loss = running_vloss)
+        write_acc_to_file(epoch, training_acc = accuracy, validation_acc = vaccuracy)
+
+    model_file = save_model(args, model)
+    print(f'Model saved to {model_file}')
+
+ 
 
 
 if __name__ == "__main__":

@@ -1,9 +1,17 @@
+'''
+VOC Segmentation - output sample images + predictions
+
+Run from UNet... directory where 'model' is saved.
+'''
+
 from argparse import (
     ArgumentDefaultsHelpFormatter,
     ArgumentParser,
     Namespace,
     BooleanOptionalAction,
 )
+
+from os import path
 
 import torch
 from torch import Tensor
@@ -15,6 +23,7 @@ import torchvision.transforms.functional as func
 
 from PIL import Image
 import numpy as np
+import matplotlib.pyplot as plt
 
 from unet import UNet
 
@@ -39,7 +48,12 @@ def parse_command_line_args() -> Namespace:
 
     parser.add_argument("--image_path", help="Path to image file directory", type=str, default="")
 
-    parser.add_argument("--dataset", help="Dataset used ('VOC' or 'epi')", type=str, default="epi")
+    parser.add_argument("--dataset", help="Dataset used ('VOC' or 'epi')", type=str, default="VOC")
+
+    parser.add_argument(
+        "--num_classes", help="Number of classes. Use 2 for semantic seg.", 
+        type=int, default=22
+    )
 
     parser.add_argument("--bs", help="Batch size", type=int, default=2)
 
@@ -109,7 +123,7 @@ def seg_to_pil(img_tensor):
     """
 
     # Steal the palette from one of the images
-    image = Image.open("C:/Users/rosie/WSL/seg-ed/data/VOCdevkit/VOC2012/SegmentationClass/2011_003271.png")
+    image = Image.open("../data/VOCdevkit/VOC2012/SegmentationClass/2011_003271.png")
 #     # pixels = (np.array(image.getchannel(0)))
     pal = np.array(image.getpalette()).reshape(256, 3)
     # Apply colour for 255 to value 21, rather than changing the value in the image.
@@ -158,6 +172,9 @@ def save_pretty_pictures(model: Module, data_set: Dataset, num_image):
         Torch dataset
     """
     
+    fig, axes = plt.subplots(nrows=3, ncols=num_image, sharex=True, sharey=True,
+                         figsize=(4*num_image, 12))
+
     for i in range(num_image):
 
         with torch.no_grad():
@@ -180,9 +197,23 @@ def save_pretty_pictures(model: Module, data_set: Dataset, num_image):
         
         orig_img = func.to_pil_image(torch.squeeze(img))
         
-        orig_img.save("orig_img{}.png".format(i))
-        pil_pred.save("pred_img{}.png".format(i))
-        pil_lab.save("targ_img{}.png".format(i))
+        #orig_img.save("orig_img{}.png".format(i))
+        #pil_pred.save("pred_img{}.png".format(i))
+        #pil_lab.save("targ_img{}.png".format(i))
+
+        axes[0][i].imshow(orig_img)
+        axes[0][i].axis('off')    
+
+        #axes[0].imshow(targ_img, alpha = 0.2)
+        axes[1][i].imshow(pil_lab)
+        axes[1][i].axis('off')
+
+        axes[2][i].imshow(pil_pred)
+        axes[2][i].axis('off')
+
+        #axes[1].imshow(pred_img, alpha = 0.2)
+
+    plt.savefig("results.png")
 
 
 if __name__ == "__main__":
