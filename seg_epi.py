@@ -409,11 +409,11 @@ def calculate_accuracy(predictions, targets):
 def calculate_dice(predictions, targets):
     ''' Calculate dice score for predictions. '''
     smooth = 1.
-     
-    _, pix_labels = torch.max(predictions, dim=1)
-    _, pix_targets = torch.max(targets, dim=1)
-    intersection = torch.eq(pix_labels,pix_targets).int().sum()
-    dice = 2 * (intersection + smooth) / (pix_labels.sum() + pix_targets.sum() + smooth)
+    
+    pix_labels, _ = torch.max(predictions, dim=1)
+    pix_targets, _ = torch.max(targets, dim=1)
+    intersection = torch.eq(pix_labels,pix_targets).sum().item()
+    dice = 2 * (intersection + smooth) / (len(torch.flatten(pix_labels)) + len(torch.flatten(pix_targets)) + smooth)
     
     return dice
 

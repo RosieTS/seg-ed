@@ -191,7 +191,7 @@ class convert_target_pil_to_tensor():
     def __init__(self, num_classes):
         
         # Semantic segmentation is actually 3 classes, to include void.
-        self.num_classes = max(num_classes,3)
+        self.num_classes = num_classes
 
     def __call__(self, pil_img):
 
@@ -496,6 +496,7 @@ def train_model(args: Namespace):
 
 if __name__ == "__main__":
     command_line_args = parse_command_line_args()
+    command_line_args.num_classes = max(command_line_args.num_classes,3)
     change_working_dir()
     write_command_line_args(command_line_args)
     #print("DEVICE is now: {}".format(DEVICE))

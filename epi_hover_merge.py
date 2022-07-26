@@ -16,7 +16,7 @@ from argparse import (
     ArgumentDefaultsHelpFormatter,
     ArgumentParser,
     Namespace,
-    #BooleanOptionalAction,
+    BooleanOptionalAction,
 )
 
 import torch
@@ -24,6 +24,7 @@ from torch.nn import Module
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 from pystain import StainTransformer
+#from pystain import macenko_extractor as he
 
 #sys.path.append('../seg-ed')
 import unet
@@ -49,9 +50,9 @@ def parse_command_line_args() -> Namespace:
         "--image_path",
         help="Path to directory containing biopsy image tile. Can include file root / wildcard \
             to return subset of images, but in this case must be enclosed in ''. \
-            Default is '/home/ret58/rds/hpc-work/epithelium_slides/images/'",
+            Default is '/home/ret58/rds/hpc-work/epithelium_slides_hi_res/images/'",
         type=str,
-        default="/home/ret58/rds/hpc-work/epithelium_slides/images/"
+        default="/home/ret58/rds/hpc-work/epithelium_slides_hi_res/images/"
     )
 
     parser.add_argument(
@@ -62,12 +63,12 @@ def parse_command_line_args() -> Namespace:
     )
 
     parser.add_argument(
-        "--json_path",
-        help="Path to directory containing json files with nucleus predictions. \
+        "--hov_path",
+        help="Path to directory containing hovernet output directories with nucleus predictions. \
             List of individual files to use will be derived from image file names. \
-            Default is '/home/ret58/rds/hpc-work/hover_net/consep_hi_res/json/'",
+            Default is '/home/ret58/rds/hpc-work/hover_net/consep_hi_res/'",
         type=str,
-        default="/home/ret58/rds/hpc-work/hover_net/consep_hi_res/json/"
+        default="/home/ret58/rds/hpc-work/hover_net/consep_hi_res/"
     )
 
     parser.add_argument(
@@ -84,6 +85,15 @@ def parse_command_line_args() -> Namespace:
         default=4
     )
 
+    parser.add_argument(
+        "--predictions",
+        type=bool,
+        default=True,
+        action=BooleanOptionalAction,
+        help="Should we run the model for the predictions? Default is True. If False will run from \
+            .npy files"
+    )
+
     return parser.parse_args()
 
 
@@ -95,7 +105,7 @@ def get_image_file_names(image_file_path):
     if image_file_path[-4:] == ".png":
         image_file_names = glob.glob(image_file_path)
     elif "." not in image_file_path:
-        glob_pattern = os.path.join(image_file_path, '*')
+        glob_pattern = os.path.join(image_file_path, '*', '*')
         image_file_names = glob.glob(glob_pattern)      
     else:
         raise ValueError("image_path should be a directory or a set of .png files.")
@@ -110,10 +120,14 @@ def get_basename(image_file_name):
     return os.path.basename(image_file_name).split('.')[0]
 
 
-def get_json_name(basename, json_file_path):
+def get_json_name(basename, hov_path):
 
-    return os.path.join(json_file_path, basename + '.json')
+    return os.path.join(hov_path, 'json', basename + '.json')
 
+
+def get_mat_file_name(basename, hov_path):
+
+    return os.path.join(hov_path, 'mat', basename + '.mat')
 
 
 def get_dataset(image_file_names):
@@ -141,6 +155,7 @@ def get_dataset(image_file_names):
     )
 
     return data_set
+
 
 def get_data_loader(data_set, batch_size, loader_workers):
     """Return a dataloader to use in training/validation.
@@ -247,7 +262,58 @@ def get_epithelium_nuclei(json_file_name, epi_mask):
     return epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours
 
 
-def output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours):
+def get_inst_map(mat_file_name):
+
+    result_mat = sio.loadmat(mat_file_name)
+    inst_map = result_mat['inst_map']
+
+    return inst_map
+
+
+def get_mean_h_concentrations(mat_file_name, image_file, epi_nuc_uids):
+
+    inst_map = get_inst_map(mat_file_name)
+
+    #image_file = os.path.join(hi_res_image_path, os.path.basename(image_file))
+    #print(hi_res_image_file)
+
+    image = cv2.imread(image_file)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    #plt.imshow(hr_image)
+    #plt.show()
+
+    #extractor = he.MacenkoExtractor()
+    #he_mat, he_conc = extractor(image_file)
+
+    he_mat, he_conc = StainTransformer(normalise = True).extractor(image_file)
+
+    he_conc_sq = he_conc.reshape(2, 1136, 1136)
+
+    he_image = he_conc_sq[0, :, :]
+
+    #plt.imshow(he_image)
+    #plt.show()
+
+    nuc_mean_h = []
+
+    for nuc_id in epi_nuc_uids:
+
+        pix_indices = np.where(inst_map == int(nuc_id))
+        # Because image coords and array coords are opposite ways round.
+        pix_coords = list(zip(pix_indices[1], pix_indices[0]))
+
+        mean_h = 0
+
+        for row, col in pix_coords:
+            mean_h = mean_h + he_image[row, col].item()
+
+        nuc_mean_h.append(mean_h / len(pix_coords))
+
+    return nuc_mean_h
+
+
+
+def output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours, nuc_mean_h):
     
     ellipses = [cv2.fitEllipse(np.array(contour)) for contour in epi_nuc_contours]
     contour_areas = [cv2.contourArea(np.array(contour)) for contour in epi_nuc_contours]
@@ -261,9 +327,10 @@ def output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contou
     df = pd.DataFrame(list(zip([tile_id] * len(epi_nuc_uids), epi_nuc_uids, 
                             epi_nuc_centroids, 
                             max_diams, min_diams, 
-                            diam_ratios, ellipse_areas, contour_areas)), 
+                            diam_ratios, ellipse_areas, contour_areas,
+                            nuc_mean_h)), 
                         columns =['Tile ID', 'Nucl ID', 'Centroid', 'Min diam', 'Max diam', 
-                                'Diam ratio', 'Ellipse area', 'Contour area'])
+                                'Diam ratio', 'Ellipse area', 'Contour area', 'Mean H conc'])
     
     return df
 
@@ -280,10 +347,10 @@ def run_model_for_predictions(model_path, image_file_names, batch_size, loader_w
     # No return statement as outputs predictions to files    
 
 
-def save_sample_image(image_file, json_file_path, tile_id, epi_mask, epi_nuc_contours):
+def save_sample_image(image_file, hov_path, tile_id, epi_mask, epi_nuc_contours):
 
-    hov_dir = os.path.abspath(os.path.join(json_file_path, os.pardir))
-    overlay_file = os.path.join(hov_dir, 'overlay', tile_id + '.png')
+    #hov_dir = os.path.abspath(os.path.join(json_file_path, os.pardir))
+    overlay_file = os.path.join(hov_path, 'overlay', tile_id + '.png')
     overlay = cv2.imread(overlay_file)
     overlay = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
 
@@ -307,7 +374,7 @@ def save_sample_image(image_file, json_file_path, tile_id, epi_mask, epi_nuc_con
     plt.savefig(get_basename(image_file) + "epi_nuc.png")
 
 
-def loop_through_tiles(image_file_names, json_file_path):
+def loop_through_tiles(image_file_names, hov_path):
 
     epi_nuc_data = pd.DataFrame()
 
@@ -322,27 +389,33 @@ def loop_through_tiles(image_file_names, json_file_path):
         # Get temp file name
         # Get json file name
         tile_id = get_basename(image_file)
-        json_file_name = get_json_name(tile_id, json_file_path)
+        json_file_name = get_json_name(tile_id, hov_path)
+        mat_file_name = get_mat_file_name(tile_id, hov_path)
         temp_file = os.path.join('tmp', tile_id + '.npy')
 
         if not os.path.exists(json_file_name):
             print(f"File {json_file_name} does not exist.")
             continue
+        if not os.path.exists(mat_file_name):
+            print(f"File {mat_file_name} does not exist.")
+            continue
                  
         epi_mask = open_and_rescale_prediction(temp_file)
         epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours = get_epithelium_nuclei(json_file_name, epi_mask)
-            
+
         if len(epi_nuc_uids) == 0:
             print(f"No epithelial nuclei identified in file {json_file_name}.")
             continue
 
-        df = output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours)
+        nuc_mean_h = get_mean_h_concentrations(mat_file_name, image_file, epi_nuc_uids)
+
+        df = output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours, nuc_mean_h)
         df.to_pickle('tmp/epi_nuc_' + tile_id + '.pkl')
 
         epi_nuc_data = pd.concat([epi_nuc_data, df], ignore_index = True)
 
         if image_file == rand_image_file:
-            save_sample_image(image_file, json_file_path, tile_id, epi_mask, epi_nuc_contours)
+            save_sample_image(image_file, hov_path, tile_id, epi_mask, epi_nuc_contours)
       
     epi_nuc_data.to_pickle('epi_nuc_data.pkl')
 
@@ -356,10 +429,11 @@ if __name__ == "__main__":
     image_file_names = get_image_file_names(command_line_args.image_path)
     print(image_file_names[0])
 
-    run_model_for_predictions(command_line_args.model_path, image_file_names, 
-        command_line_args.bs, command_line_args.lw)
+    if command_line_args.predictions:
+        run_model_for_predictions(command_line_args.model_path, image_file_names, 
+            command_line_args.bs, command_line_args.lw)
 
-    epi_nuc_data = loop_through_tiles(image_file_names, command_line_args.json_path)
+    epi_nuc_data = loop_through_tiles(image_file_names, command_line_args.hov_path)
 
     print("Head and tail of final dataframe:")
     print(epi_nuc_data.head())
