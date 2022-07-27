@@ -65,9 +65,14 @@ model.eval()
 
 # Run model for predictions and return dice
 loss_func = BCELoss()
-mean_vloss, vaccuracy, vdice = validate_one_epoch(model, validation_loader, loss_func)
+mean_vloss, vaccuracy, vdice, vjacc = validate_one_epoch(model, validation_loader, loss_func)
 
 # Write dice to file
-f = open("Dice.txt", "a")
+f = open("Dice.txt", "w")
 f.write(f"Validation set dice score: {vdice:.3f}\n")
+f.close()
+
+# Write dice to file
+f = open("Jacc.txt", "w")
+f.write(f"Validation set Jaccard index: {vjacc:.3f}\n")
 f.close()

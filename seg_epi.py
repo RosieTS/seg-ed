@@ -162,6 +162,11 @@ def write_dice_to_file(epoch, training_dice, validation_dice, filename="dice.txt
     f.write(f"Epoch {epoch+1} training dice: {training_dice:.3f}, validation dice: {validation_dice:.3f}\n")
     f.close()
 
+def write_jacc_to_file(epoch, training_jacc, validation_jacc, filename="jacc.txt"):
+    f = open(filename, "a")
+    f.write(f"Epoch {epoch+1} training jacc: {training_jacc:.3f}, validation jacc: {validation_jacc:.3f}\n")
+    f.close()
+
 
 def get_file_names(file_dir, img_set):
     ''' List of files is without extensions as I'd originally intended to use the same
@@ -409,13 +414,29 @@ def calculate_accuracy(predictions, targets):
 def calculate_dice(predictions, targets):
     ''' Calculate dice score for predictions. '''
     smooth = 1.
-    
-    pix_labels, _ = torch.max(predictions, dim=1)
-    pix_targets, _ = torch.max(targets, dim=1)
-    intersection = torch.eq(pix_labels,pix_targets).sum().item()
-    dice = 2 * (intersection + smooth) / (len(torch.flatten(pix_labels)) + len(torch.flatten(pix_targets)) + smooth)
+     
+    _, pix_labels = torch.max(predictions, dim=1)
+    _, pix_targets = torch.max(targets, dim=1)
+    # Operation will work only if background, mask have values 0, 1
+    intersection = torch.sum(pix_labels*pix_targets)
+    union = torch.sum(pix_labels) + torch.sum(pix_targets)
+    dice = 2 * (intersection + smooth) / (union + smooth)
     
     return dice
+
+
+def calculate_jaccard(predictions, targets):
+    ''' Calculate Jaccard index for predictions. '''
+    smooth = 1.
+     
+    _, pix_labels = torch.max(predictions, dim=1)
+    _, pix_targets = torch.max(targets, dim=1)
+    # Operation will work only if background, mask have values 0, 1
+    intersection = torch.sum(pix_labels*pix_targets)
+    union = torch.sum(pix_labels) + torch.sum(pix_targets) - intersection
+    jaccard = (intersection + smooth) / (union + smooth)
+    
+    return jaccard
 
 
 def train_one_epoch(
@@ -441,6 +462,7 @@ def train_one_epoch(
     running_loss = 0.0
     running_acc = 0.0
     running_dice = 0.0
+    running_jacc = 0.0
     for images, targets in data_loader:
 
         ### Include "if" to say if want augmenting. ###
@@ -461,12 +483,14 @@ def train_one_epoch(
         running_loss += loss.item()
         running_acc += calculate_accuracy(predictions, targs)
         running_dice += calculate_dice(predictions, targs)
+        running_jacc += calculate_jaccard(predictions, targets)
     
     mean_loss = running_loss / len(data_loader)
     accuracy = running_acc / len(data_loader)
     dice = running_dice / len(data_loader)
+    jacc = running_jacc / len(data_loader)
 
-    return mean_loss, accuracy, dice
+    return mean_loss, accuracy, dice, jacc
 
 
 def validate_one_epoch(
@@ -493,6 +517,7 @@ def validate_one_epoch(
     running_vloss = 0.0
     running_acc = 0.0
     running_dice = 0.0
+    running_jacc = 0.0
     with torch.no_grad():
         for imgs, targets in data_loader:
             
@@ -505,12 +530,14 @@ def validate_one_epoch(
             running_vloss += loss.item()
             running_acc += calculate_accuracy(predictions, targets)
             running_dice += calculate_dice(predictions, targets)
+            running_jacc += calculate_jaccard(predictions, targets)
     
         mean_vloss = running_vloss / len(data_loader) 
         accuracy = running_acc / len(data_loader)
         dice = running_dice / len(data_loader)
+        jacc = running_jacc / len(data_loader)
 
-    return mean_vloss, accuracy, dice
+    return mean_vloss, accuracy, dice, jacc
 
 
 def save_model(args: Namespace, model):
@@ -576,12 +603,13 @@ def train_model(args: Namespace):
 
         print(f"EPOCH: {epoch+1}")
 
-        mean_loss, accuracy, dice = train_one_epoch(model, training_loader, optimiser, loss_func)
-        mean_vloss, vaccuracy, vdice = validate_one_epoch(model, validation_loader, loss_func)
+        mean_loss, accuracy, dice, jacc = train_one_epoch(model, training_loader, optimiser, loss_func)
+        mean_vloss, vaccuracy, vdice, vjacc = validate_one_epoch(model, validation_loader, loss_func)
 
         write_losses_to_file(epoch, training_loss = mean_loss, validation_loss = mean_vloss)
         write_acc_to_file(epoch, training_acc = accuracy, validation_acc = vaccuracy)
-        write_dice_to_file(epoch, training_dice = dice, validation_dice = dice)
+        write_dice_to_file(epoch, training_dice = dice, validation_dice = vdice)
+        write_jacc_to_file(epoch, training_jacc = jacc, validation_jacc = vjacc)
 
     model_file = save_model(args, model)
     print(f'Model saved to {model_file}')

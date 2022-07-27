@@ -6,6 +6,17 @@ import cv2
 #import torchmetrics
 #import sklearn.metrics as met
 
+def calculate_accuracy(predictions, targets):
+    ''' Calculate pixel-wise accuracy of predictions. '''
+
+    _, pix_labels = torch.max(predictions, dim=1)
+    _, pix_targets = torch.max(targets, dim=1)
+    correct = torch.eq(pix_labels,pix_targets).int()
+    accuracy = correct.sum() / correct.numel()
+    
+    return accuracy
+
+''' WRONG!!!!
 def calculate_dice(predictions, targets):
     ''' Calculate dice score for predictions. '''
     smooth = 1.
@@ -16,30 +27,35 @@ def calculate_dice(predictions, targets):
     dice = 2 * (intersection + smooth) / (len(torch.flatten(pix_labels)) + len(torch.flatten(pix_targets)) + smooth)
     
     return dice
+'''
+
+def calculate_dice(predictions, targets):
+    ''' Calculate dice score for predictions. '''
+    smooth = 1.
+     
+    _, pix_labels = torch.max(predictions, dim=1)
+    _, pix_targets = torch.max(targets, dim=1)
+    # Operation will work only if background, mask have values 0, 1
+    intersection = torch.sum(pix_labels*pix_targets)
+    union = torch.sum(pix_labels) + torch.sum(pix_targets)
+    dice = 2 * (intersection + smooth) / (union + smooth)
+    
+    return dice
+
 
 def calculate_jaccard(predictions, targets):
-    '''
-    From https://towardsdatascience.com/metrics-to-evaluate-your-semantic-segmentation-model-6bcb99639aa2
-    
-
-    def iou_coef(y_true, y_pred, smooth=1):
-    intersection = K.sum(K.abs(y_true * y_pred), axis=[1,2,3])
-    union = K.sum(y_true,[1,2,3])+K.sum(y_pred,[1,2,3])-intersection
-    iou = K.mean((intersection + smooth) / (union + smooth), axis=0)
-    return iou
-    '''
-
-
-
+    ''' Calculate dice score for predictions. '''
     smooth = 1.
+     
+    _, pix_labels = torch.max(predictions, dim=1)
+    _, pix_targets = torch.max(targets, dim=1)
+    # Operation will work only if background, mask have values 0, 1
+    intersection = torch.sum(pix_labels*pix_targets)
+    union = torch.sum(pix_labels) + torch.sum(pix_targets) - intersection
+    jaccard = (intersection + smooth) / (union + smooth)
     
-    pix_labels, _ = torch.max(predictions, dim=1)
-    pix_targets, _ = torch.max(targets, dim=1)
-    intersection = torch.eq(pix_labels,pix_targets).sum().item()
-    # Calculate union
-    
-    # Jaccard = mean (intersetion/(union + smooth) over classes
     return jaccard
+
 
 pred_raw = np.load('/home/ret58/rds/hpc-work/epi_merge_consep/tmp/1266_15_19312_9088.npy')
 pred = cv2.resize(pred_raw, dsize = (284, 284), interpolation = cv2.INTER_NEAREST)
@@ -72,16 +88,18 @@ print(pred[0,0,:,0])
 print(mask[0,0,:,0])
 
 dice = calculate_dice(pred, mask)
+acc = calculate_accuracy(pred, mask)
 
-pred_noclasses, _ = torch.max(pred, dim=1)
-mask_noclasses, _ = torch.max(mask, dim=1)
+#pred_noclasses, _ = torch.max(pred, dim=1)
+#mask_noclasses, _ = torch.max(mask, dim=1)
 
-pred_noclasses[pred_noclasses == 255] = 1
-mask_noclasses[mask_noclasses == 255] = 1
+#pred_noclasses[pred_noclasses == 255] = 1
+#mask_noclasses[mask_noclasses == 255] = 1
 
 #jaccard = torchmetrics.JaccardIndex(num_classes=2)
 #jacc = torchmetrics.functional.jaccard_index(pred_noclasses, mask_noclasses, num_classes = 2)
 
 
 print(dice)
+print(acc)
 #print(jacc)
