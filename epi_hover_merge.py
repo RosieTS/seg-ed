@@ -428,7 +428,7 @@ def loop_through_tiles(image_file_names, hi_res_image_path, hov_path):
         epi_mask = open_and_rescale_prediction(temp_file)
 
         epi_nuc_info = get_epithelium_nuclei(json_file_name, epi_mask)
-        epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours = epi_nuc_info[0:2]
+        epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours = epi_nuc_info[0:3]
         if len(epi_nuc_info) == 4:
             epi_nuc_types = epi_nuc_info[3]
 
