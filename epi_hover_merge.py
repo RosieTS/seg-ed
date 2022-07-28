@@ -438,8 +438,10 @@ def loop_through_tiles(image_file_names, hi_res_image_path, hov_path):
             print(f"No epithelial nuclei identified in file {json_file_name}.")
             continue
 
-        hr_image_file = os.path.join(os.path.dirname(rand_image_file), tile_id + '.png')
-        print(hr_image_file)
+        hr_image_file = os.path.join(hi_res_image_path, tile_id.split('_')[0] + '_' + 
+                                                        tile_id.split('_')[1], tile_id + '.png')
+        if tile_id == '1182_16_10224_10224':
+            print(hr_image_file)
         nuc_mean_h = get_mean_h_concentrations(mat_file_name, hr_image_file, epi_nuc_uids)
 
         df = output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, 
