@@ -308,7 +308,9 @@ def get_mean_h_concentrations(mat_file_name, image_file, epi_nuc_uids):
 
     he_mat, he_conc = StainTransformer(normalise = True).extractor(image_file)
 
-    he_conc_sq = he_conc.reshape(2, 1136, 1136)
+    #he_conc_sq = he_conc.reshape(2, 1136, 1136)
+    image_dims = (2,) + inst_map.shape
+    he_conc_sq = he_conc.reshape(image_dims)
 
     he_image = he_conc_sq[0, :, :]
 
