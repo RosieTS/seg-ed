@@ -48,6 +48,16 @@ def parse_command_line_args() -> Namespace:
 
     parser.add_argument(
         "--image_path",
+        help="Path to directory containing biopsy image tile used to train epithelilum segmentation \
+            model. Can include file root / wildcard \
+            to return subset of images, but in this case must be enclosed in ''. \
+            Default is '/home/ret58/rds/hpc-work/epithelium_slides/images/'",
+        type=str,
+        default="/home/ret58/rds/hpc-work/epithelium_slides/images/"
+    )
+
+    parser.add_argument(
+        "--hi_res_image_path",
         help="Path to directory containing biopsy image tile. Can include file root / wildcard \
             to return subset of images, but in this case must be enclosed in ''. \
             Default is '/home/ret58/rds/hpc-work/epithelium_slides_hi_res/images/'",
@@ -246,18 +256,29 @@ def get_epithelium_nuclei(json_file_name, epi_mask):
     epi_nuc_uids = []
     epi_nuc_centroids = []
     epi_nuc_contours = []
+    type_included = False
+    
+    if 'type' in inst_info:
+        epi_nuc_types = []
+        type_included = True
 
     for inst in nuc_info:
 
         inst_info = nuc_info[inst]
         centroid = np.around(inst_info['centroid']).astype(int)
         contour = inst_info['contour']
-
+        if type_included:
+            ntype = inst_info['type']
+        
         if epi_mask[centroid[1], centroid[0]] == 255 and len(contour) >=5:
             epi_nuc_uids.append(inst)
             epi_nuc_centroids.append(centroid)
             epi_nuc_contours.append(contour)
-            ## Put type_list here if using
+            if type_included:
+                epi_nuc_types.append(ntype)
+
+    if type_included:
+        return epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours, epi_nuc_types
 
     return epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours
 
@@ -299,8 +320,7 @@ def get_mean_h_concentrations(mat_file_name, image_file, epi_nuc_uids):
     for nuc_id in epi_nuc_uids:
 
         pix_indices = np.where(inst_map == int(nuc_id))
-        # Because image coords and array coords are opposite ways round.
-        pix_coords = list(zip(pix_indices[1], pix_indices[0]))
+        pix_coords = list(zip(pix_indices[0], pix_indices[1]))
 
         mean_h = 0
 
@@ -313,7 +333,8 @@ def get_mean_h_concentrations(mat_file_name, image_file, epi_nuc_uids):
 
 
 
-def output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours, nuc_mean_h):
+def output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours, 
+                        nuc_mean_h, epi_nuc_types=None):
     
     ellipses = [cv2.fitEllipse(np.array(contour)) for contour in epi_nuc_contours]
     contour_areas = [cv2.contourArea(np.array(contour)) for contour in epi_nuc_contours]
@@ -331,6 +352,8 @@ def output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contou
                             nuc_mean_h)), 
                         columns =['Tile ID', 'Nucl ID', 'Centroid', 'Min diam', 'Max diam', 
                                 'Diam ratio', 'Ellipse area', 'Contour area', 'Mean H conc'])
+
+    df['Type'] = epi_nuc_types
     
     return df
 
@@ -374,11 +397,13 @@ def save_sample_image(image_file, hov_path, tile_id, epi_mask, epi_nuc_contours)
     plt.savefig(get_basename(image_file) + "epi_nuc.png")
 
 
-def loop_through_tiles(image_file_names, hov_path):
+def loop_through_tiles(image_file_names, hi_res_image_path, hov_path):
 
     epi_nuc_data = pd.DataFrame()
 
-    rand_image_file = np.random.choice(image_file_names)
+    hi_res_image_file_names = get_image_file_names(hi_res_image_path)
+    rand_image_file = np.random.choice(hi_res_image_file_names)
+    rand_image_tile_id = get_basename(rand_image_file)
 
     for image_file in image_file_names:
 
@@ -401,7 +426,11 @@ def loop_through_tiles(image_file_names, hov_path):
             continue
                  
         epi_mask = open_and_rescale_prediction(temp_file)
-        epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours = get_epithelium_nuclei(json_file_name, epi_mask)
+
+        epi_nuc_info = get_epithelium_nuclei(json_file_name, epi_mask)
+        epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours = epi_nuc_info[0:2]
+        if len(epi_nuc_info) == 4:
+            epi_nuc_types = epi_nuc_info[3]
 
         if len(epi_nuc_uids) == 0:
             print(f"No epithelial nuclei identified in file {json_file_name}.")
@@ -409,13 +438,14 @@ def loop_through_tiles(image_file_names, hov_path):
 
         nuc_mean_h = get_mean_h_concentrations(mat_file_name, image_file, epi_nuc_uids)
 
-        df = output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours, nuc_mean_h)
+        df = output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, 
+                epi_nuc_contours, nuc_mean_h, epi_nuc_types)
         df.to_pickle('tmp/epi_nuc_' + tile_id + '.pkl')
 
         epi_nuc_data = pd.concat([epi_nuc_data, df], ignore_index = True)
 
-        if image_file == rand_image_file:
-            save_sample_image(image_file, hov_path, tile_id, epi_mask, epi_nuc_contours)
+        if tile_id == rand_image_tile_id:
+            save_sample_image(rand_image_file, hov_path, tile_id, epi_mask, epi_nuc_contours)
       
     epi_nuc_data.to_pickle('epi_nuc_data.pkl')
 
@@ -433,7 +463,8 @@ if __name__ == "__main__":
         run_model_for_predictions(command_line_args.model_path, image_file_names, 
             command_line_args.bs, command_line_args.lw)
 
-    epi_nuc_data = loop_through_tiles(image_file_names, command_line_args.hov_path)
+    epi_nuc_data = loop_through_tiles(image_file_names, command_line_args.hi_res_image_path, 
+                                    command_line_args.hov_path)
 
     print("Head and tail of final dataframe:")
     print(epi_nuc_data.head())
