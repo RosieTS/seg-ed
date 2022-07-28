@@ -258,7 +258,7 @@ def get_epithelium_nuclei(json_file_name, epi_mask):
     epi_nuc_contours = []
     type_included = False
     
-    if 'type' in inst_info:
+    if 'type' in nuc_info["1"]:
         epi_nuc_types = []
         type_included = True
 
