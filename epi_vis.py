@@ -41,6 +41,8 @@ def parse_command_line_args() -> Namespace:
 
     parser.add_argument("--image_path", help="Path to image file directory", type=str, default="")
 
+    parser.add_argument("--image_set", help="Name of image set", type=str, default="val")
+
     return parser.parse_args()
 
 
@@ -186,7 +188,7 @@ if __name__ == "__main__":
     print(f"Device set to: {DEVICE}.")
     command_line_args = parse_command_line_args()
 
-    data_set = get_data_set(command_line_args.image_path, "val", subsample = "all")
+    data_set = get_data_set(command_line_args.image_path, command_line_args.image_set, subsample = "all")
 
     model = torch.load(command_line_args.model_path, map_location=DEVICE)
     model.eval()
