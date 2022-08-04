@@ -483,7 +483,7 @@ def train_one_epoch(
         running_loss += loss.item()
         running_acc += calculate_accuracy(predictions, targs)
         running_dice += calculate_dice(predictions, targs)
-        running_jacc += calculate_jaccard(predictions, targets)
+        running_jacc += calculate_jaccard(predictions, targs)
     
     mean_loss = running_loss / len(data_loader)
     accuracy = running_acc / len(data_loader)
