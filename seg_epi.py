@@ -324,8 +324,8 @@ def get_data_set(data_dir, img_set, subsample):
     directory holding "images" and "masks" directories.
     '''
 
-    if img_set not in ("train", "val", "trainval"):
-        raise ValueError (f"Image set option {img_set} is not acceptable.")
+    #if img_set not in ("train", "val", "trainval"):
+    #    raise ValueError (f"Image set option {img_set} is not acceptable.")
 
     image_file_names, mask_file_names = get_file_names(data_dir, img_set)
     #mask_file_names = get_file_names(mask_dir)
