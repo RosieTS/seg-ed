@@ -63,8 +63,8 @@ def get_otsu_threshold(image):
     WSI_grayscale = np.asarray(
                 image.read_region(
                     (0,0),
-                    level_count,
-                    image.level_dimensions[level_count],
+                    lev_dim,
+                    image.level_dimensions[lev_dim],
                 ).convert('L')
             )
     threshold = otsu(WSI_grayscale) / 255
