@@ -58,11 +58,13 @@ def get_patch_origin_coords(image, patch_size, stride, level_dim):
 
 def get_otsu_threshold(image):
 
+    lev_dim = min(image.level_count - 1, 4)
+
     WSI_grayscale = np.asarray(
                 image.read_region(
                     (0,0),
-                    4,
-                    image.level_dimensions[4],
+                    level_count,
+                    image.level_dimensions[level_count],
                 ).convert('L')
             )
     threshold = otsu(WSI_grayscale) / 255
