@@ -127,7 +127,8 @@ if __name__ == "__main__":
         print(image_file_name)
         print(mask_file_name)
         image = openslide.OpenSlide(image_file_name)
-        mask = openslide.OpenSlide(mask_file_name)
+        if mask_dir != "":
+           mask = openslide.OpenSlide(mask_file_name)
         patch_size = (int(1136/ 2**level_dim), int(1136/ 2**level_dim))
         stride = (int(patch_size[0] / 2), int(patch_size[1] / 2))
     
@@ -150,6 +151,7 @@ if __name__ == "__main__":
 
                 if background_fraction <= tol:
                     save_patch(extracted_patch, output_dir, image_file_name)
-
-                    extracted_mask = extract_mask(mask, x, y, level_dim, patch_size = patch_size)
-                    save_patch(extracted_mask, output_dir, mask_file_name)
+                    
+                    if mask_dir != "":
+                        extracted_mask = extract_mask(mask, x, y, level_dim, patch_size = patch_size)
+                        save_patch(extracted_mask, output_dir, mask_file_name)
