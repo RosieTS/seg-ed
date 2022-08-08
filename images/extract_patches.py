@@ -141,7 +141,7 @@ if __name__ == "__main__":
         threshold =  get_otsu_threshold(image)
         print(threshold)
 
-        x_coords, y_coords = get_patch_origin_coords(image, patch_size, stride, level_dim)
+        x_coords, y_coords = get_patch_origin_coords(image, patch_size, stride, scale_factor)
         #print(x_coords)
         #print(y_coords)
 
