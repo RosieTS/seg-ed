@@ -16,12 +16,12 @@ from skimage.color import rgb2gray
 from skimage.filters import threshold_otsu as otsu
 
 
-def get_args(name = 'default', level_dim = 2, 
+def get_args(name = 'default', level_dim = 2, scale_factor = 4, 
     WSI_dir="/home/rosie/epithelium_slides/WSIs",
     mask_dir="/home/rosie/epithelium_slides/export_openslide",
     output_dir="/home/rosie/epithelium_slides/output_images"):
     
-    return int(level_dim), WSI_dir, mask_dir, output_dir
+    return int(level_dim), int(scale_factor), WSI_dir, mask_dir, output_dir
  
 
 def get_image_and_mask_names(WSI_dir, mask_dir):
@@ -41,7 +41,7 @@ def get_image_and_mask_names(WSI_dir, mask_dir):
     return list(zip(image_file_names, mask_file_names))
 
 
-def get_patch_origin_coords(image, patch_size, stride, level_dim):
+def get_patch_origin_coords(image, patch_size, stride, scale_factor):
     # Need to make sure taking the same dimensions from image and mask.
     
     # Image dimensions at highest resolution:
@@ -50,8 +50,8 @@ def get_patch_origin_coords(image, patch_size, stride, level_dim):
     # Starting coords are in coords of full sized image
     # The -1 stops us from outputting patches that overlap with edge of image
 
-    x_coords = [x * stride[0]  * 2**level_dim for x in range(0,(width // (stride[0] * 2**level_dim) - 1))]
-    y_coords = [y * stride[1]  * 2**level_dim for y in range(0,(height // (stride[1] * 2**level_dim) - 1))]
+    x_coords = [x * stride[0] * scale_factor for x in range(0,(width // (stride[0] * scale_factor) - 1))]
+    y_coords = [y * stride[1] * scale_factor for y in range(0,(height // (stride[1] * scale_factor) - 1))]
 
     return x_coords, y_coords
 
@@ -116,8 +116,9 @@ if __name__ == "__main__":
 #    mask_dir="/home/rosie/epithelium_slides/export_openslide"
 #    output_dir="/home/rosie/epithelium_slides/output_images"
 
-    level_dim, WSI_dir, mask_dir, output_dir = get_args(*sys.argv)
+    level_dim, scale_factor, WSI_dir, mask_dir, output_dir = get_args(*sys.argv)
     print(level_dim)
+    print(scale_factor)
     print(WSI_dir)
     print(mask_dir)
     print(output_dir)
@@ -131,7 +132,7 @@ if __name__ == "__main__":
         image = openslide.OpenSlide(image_file_name)
         if mask_dir != "":
            mask = openslide.OpenSlide(mask_file_name)
-        patch_size = (int(1136/ 2**level_dim), int(1136/ 2**level_dim))
+        patch_size = (int(1136/ scale_factor), int(1136/ scale_factor))
         stride = (int(patch_size[0] / 2), int(patch_size[1] / 2))
     
         #print(image.level_dimensions)
@@ -140,7 +141,7 @@ if __name__ == "__main__":
         threshold =  get_otsu_threshold(image)
         print(threshold)
 
-        x_coords, y_coords = get_patch_origin_coords(image, patch_size, stride, level_dim)
+        x_coords, y_coords = get_patch_origin_coords(image, patch_size, stride, scale_factor)
         #print(x_coords)
         #print(y_coords)
 
