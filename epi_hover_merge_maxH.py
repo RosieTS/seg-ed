@@ -253,6 +253,7 @@ def get_epithelium_nuclei(json_file_name, epi_mask):
     
     nuc_info = data['nuc']
     if not nuc_info:
+        print(nuc_info)
         return None
 
     epi_nuc_uids = []
@@ -260,7 +261,8 @@ def get_epithelium_nuclei(json_file_name, epi_mask):
     epi_nuc_contours = []
     type_included = False
     
-    if 'type' in nuc_info["1"]:
+#    if 'type' in nuc_info["1"]:
+    if 'type' in list(nuc_info.values())[0]
         epi_nuc_types = []
         type_included = True
 
