@@ -252,6 +252,8 @@ def get_epithelium_nuclei(json_file_name, epi_mask):
         data = json.load(json_file)
     
     nuc_info = data['nuc']
+    if not nuc_info:
+        return None
 
     epi_nuc_uids = []
     epi_nuc_centroids = []
@@ -434,6 +436,10 @@ def loop_through_tiles(image_file_names, hi_res_image_path, hov_path):
         epi_mask = open_and_rescale_prediction(temp_file)
 
         epi_nuc_info = get_epithelium_nuclei(json_file_name, epi_mask)
+        if epi_nuc_info is None:
+            print(f"No nuclei identified in file {json_file_name}.")
+            continue
+
         epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours = epi_nuc_info[0:3]
         if len(epi_nuc_info) == 4:
             epi_nuc_types = epi_nuc_info[3]
