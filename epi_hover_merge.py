@@ -252,13 +252,17 @@ def get_epithelium_nuclei(json_file_name, epi_mask):
         data = json.load(json_file)
     
     nuc_info = data['nuc']
+    if not nuc_info:
+        print(nuc_info)
+        return None
 
     epi_nuc_uids = []
     epi_nuc_centroids = []
     epi_nuc_contours = []
     type_included = False
     
-    if 'type' in nuc_info["1"]:
+#    if 'type' in nuc_info["1"]:
+    if 'type' in list(nuc_info.values())[0]:
         epi_nuc_types = []
         type_included = True
 
@@ -318,6 +322,7 @@ def get_mean_h_concentrations(mat_file_name, image_file, epi_nuc_uids):
     #plt.show()
 
     nuc_mean_h = []
+    nuc_max_h = []
 
     for nuc_id in epi_nuc_uids:
 
@@ -325,18 +330,20 @@ def get_mean_h_concentrations(mat_file_name, image_file, epi_nuc_uids):
         pix_coords = list(zip(pix_indices[0], pix_indices[1]))
 
         mean_h = 0
+        max_h = 0
 
         for row, col in pix_coords:
             mean_h = mean_h + he_image[row, col].item()
+            max_h = max(max_h, he_image[row, col].item())
 
         nuc_mean_h.append(mean_h / len(pix_coords))
+        nuc_max_h.append(max_h)
 
-    return nuc_mean_h
-
+    return nuc_mean_h, nuc_max_h
 
 
 def output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours, 
-                        nuc_mean_h, epi_nuc_types=None):
+                        nuc_mean_h, nuc_max_h, epi_nuc_types=None):
     
     ellipses = [cv2.fitEllipse(np.array(contour)) for contour in epi_nuc_contours]
     contour_areas = [cv2.contourArea(np.array(contour)) for contour in epi_nuc_contours]
@@ -351,9 +358,10 @@ def output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contou
                             epi_nuc_centroids, 
                             max_diams, min_diams, 
                             diam_ratios, ellipse_areas, contour_areas,
-                            nuc_mean_h)), 
+                            nuc_mean_h, nuc_max_h)), 
                         columns =['Tile ID', 'Nucl ID', 'Centroid', 'Min diam', 'Max diam', 
-                                'Diam ratio', 'Ellipse area', 'Contour area', 'Mean H conc'])
+                                'Diam ratio', 'Ellipse area', 'Contour area', 'Mean H conc',
+                                'Max H conc'])
 
     df['Type'] = epi_nuc_types
     
@@ -430,6 +438,10 @@ def loop_through_tiles(image_file_names, hi_res_image_path, hov_path):
         epi_mask = open_and_rescale_prediction(temp_file)
 
         epi_nuc_info = get_epithelium_nuclei(json_file_name, epi_mask)
+        if epi_nuc_info is None:
+            print(f"No nuclei identified in file {json_file_name}.")
+            continue
+
         epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours = epi_nuc_info[0:3]
         if len(epi_nuc_info) == 4:
             epi_nuc_types = epi_nuc_info[3]
@@ -442,10 +454,10 @@ def loop_through_tiles(image_file_names, hi_res_image_path, hov_path):
                                                         tile_id.split('_')[1], tile_id + '.png')
         if tile_id == '1182_16_10224_10224':
             print(hr_image_file)
-        nuc_mean_h = get_mean_h_concentrations(mat_file_name, hr_image_file, epi_nuc_uids)
+        nuc_mean_h, nuc_max_h = get_mean_h_concentrations(mat_file_name, hr_image_file, epi_nuc_uids)
 
         df = output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, 
-                epi_nuc_contours, nuc_mean_h, epi_nuc_types)
+                epi_nuc_contours, nuc_mean_h, nuc_max_h, epi_nuc_types)
         df.to_pickle('tmp/epi_nuc_' + tile_id + '.pkl')
 
         epi_nuc_data = pd.concat([epi_nuc_data, df], ignore_index = True)
