@@ -1,4 +1,6 @@
-"""Simple image-label style dataset `ImageDataset`."""
+"""Simple image-label style dataset `ImageDataset`.
+Jim's code, used without alteration.
+"""
 from typing import List, Union, Optional, Tuple, Any
 from pathlib import Path
 from collections import Counter

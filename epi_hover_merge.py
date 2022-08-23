@@ -1,3 +1,22 @@
+"""This code takes epithelium prediction masks at 10x resolution and
+merges them with nucleus prediction masks at 40x resolution to return
+(and save as a .pkl file) a data frame containing a list of all epithelial
+nuclei and their properties. 
+
+Requires as input:
+    Path to directory containing 10x resolution images. There must be an equivalent folder
+        at the same level with the masks, i.e. ../masks
+    Path to directory containing 40x resolution images
+    Path to directory containing HoVerNet output directories (json, mat, overlay)
+    Path to (torch) model used for predictions
+
+Outputs: 
+    Pickle file : epi_nuc_data.pkl
+    Single sample image to confirm everything looks OK: PREFIX_epi_nuc.png
+
+"""
+
+
 import sys
 
 #sys.path.append('../')
@@ -24,9 +43,7 @@ from torch.nn import Module
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 from pystain import StainTransformer
-#from pystain import macenko_extractor as he
 
-#sys.path.append('../seg-ed')
 import unet
 from image_dataset import ImageDataset
 
@@ -111,6 +128,19 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Device set to: {DEVICE}.")
 
 def get_image_file_names(image_file_path):
+    """Use image file path to return list of image file names.
+    
+    Parameters
+    ----------
+    image_file_path : str
+        Full path to image file directory, or alternatively a directory
+        + wildcard search ending in .png
+    
+    Returns
+    -------
+    image_file_names : str list
+        List of paths to image files
+    """
     
     if image_file_path[-4:] == ".png":
         image_file_names = glob.glob(image_file_path)
@@ -126,16 +156,51 @@ def get_image_file_names(image_file_path):
 
 
 def get_basename(image_file_name):
+    """Get the basename of an image from its file name.
+    
+    Parameters
+    ----------
+    image_file_name : str
+        Path to image file
+    
+    Returns
+    -------
+    Image base name (path removed, no suffix)
+    """
 
     return os.path.basename(image_file_name).split('.')[0]
 
 
 def get_json_name(basename, hov_path):
+    """Return a json filename using the image basename and HoVerNet file path
+    
+    Parameters
+    ----------
+    basename : str
+        Image base name
+    hov_path : Path to HoVerNet directory
+    
+    Returns
+    -------
+    Path to hovernet json file
+    """
 
     return os.path.join(hov_path, 'json', basename + '.json')
 
 
 def get_mat_file_name(basename, hov_path):
+    """Return a mat filename using the image basename and HoVerNet file path
+    
+    Parameters
+    ----------
+    basename : str
+        Image base name
+    hov_path : Path to HoVerNet directory
+    
+    Returns
+    -------
+    Path to hovernet mat file
+    """
 
     return os.path.join(hov_path, 'mat', basename + '.mat')
 
@@ -172,12 +237,12 @@ def get_data_loader(data_set, batch_size, loader_workers):
 
     Parameters
     ----------
-    args : Namespace
-        Command-line arguments.
-    img_set : Image Set to use. 
-        "train" or "val"
     data_set : Dataset
-        The dataset to be loaded. 
+        The dataset to be loaded.
+    batch_size : int
+        Batch size to be used.
+    loader_workers : int
+        Number of loader workers to be used.
 
     Returns
     -------
@@ -195,6 +260,21 @@ def get_data_loader(data_set, batch_size, loader_workers):
 
 
 def generate_predictions(model: Module, imgs):
+    """Generate epithelium predictions from trained model +
+    input images at 10x resolution. 
+    
+    Parameters
+    ----------
+    model : Module
+        Trained model to use
+    imgs : Tensor
+        Mini-batch of images
+
+    Returns
+    -------
+    imgs_pred : Tensor
+        Mini-batch of images
+    """
 
     imgs_gpu = imgs.to(DEVICE)
 
@@ -208,6 +288,19 @@ def generate_predictions(model: Module, imgs):
 
 def write_preds_to_file(predictions, batch_num, batch_size,
         image_file_names):
+    """Save predictions to a temporary file in case of crashes. 
+    
+    Parameters
+    ----------
+    predictions : Tensor
+        Mini-batch of predictions
+    batch_num : int
+        Running count of which batch we're on
+    batch_size : int
+        Mini-batch size
+    image_file_names : List
+        List of paths to image files
+    """
     
     if os.path.isdir("tmp") == False:
         os.mkdir("tmp")
@@ -224,8 +317,20 @@ def write_preds_to_file(predictions, batch_num, batch_size,
         np.save(pred_file_name, epi_mask)
 
 
-# Get epithelial preds in batches and write to temp files (one file each?)
 def output_predictions(model: Module, data_loader, image_file_names):
+    """Cycle through dataset and generate epithelium predictions from trained model +
+    input images at 10x resolution; write these to temporary files
+    
+    Parameters
+    ----------
+    model : Module
+        Trained model to use
+    data_loader : Dataloader
+        Data loader to use
+    image_file_names : List
+        List of paths to image files
+
+    """
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device set to: {DEVICE}.")
 
@@ -240,6 +345,20 @@ def output_predictions(model: Module, data_loader, image_file_names):
 
 # Open predictions (saved as numpy) and scale up
 def open_and_rescale_prediction(saved_prediction):
+    """ Open epithelium predictions (10x magnification) and scale up to 
+        same size as 40x magnification.
+
+    Parameters
+    ----------
+    saved_prediction : npy filename
+        Path to file with saved prediction as numpy array.
+
+    Returns
+    -------
+    epi_mask : np array
+        Numpy array containing epithelium prediction mask
+    """
+
     epi_mask = np.load(saved_prediction)
     epi_mask = cv2.resize(epi_mask, (1136,1136), interpolation = cv2.INTER_NEAREST)
 
@@ -247,6 +366,25 @@ def open_and_rescale_prediction(saved_prediction):
 
 
 def get_epithelium_nuclei(json_file_name, epi_mask):
+    """ Using epithelium mask and HoVerNet json file, identify epithelial
+    nuclei.
+
+    Parameters
+    ----------
+    json_file_name : str
+        Path to HoVerNet json file
+    epi_mask : np array
+        Numpy array containing epithelium prediction mask
+
+    Returns
+    -------
+    epi_nuc_uids : List
+        List of nucleus IDs (int stored as str)
+    epi_nuc_centroids: List
+        List of centroid coordinates for each nucleus
+    epi_nuc_contours : List
+        List of contours for each nucleus
+    """
 
     with open(json_file_name) as json_file:
         data = json.load(json_file)
@@ -288,6 +426,18 @@ def get_epithelium_nuclei(json_file_name, epi_mask):
 
 
 def get_inst_map(mat_file_name):
+    """Get nucleus instance map from HoVerNet mat file
+    
+    Parameters
+    ----------
+    mat_file_name : str
+        Path to HoVerNet mat file
+
+    Returns
+    -------
+    inst_map : np array
+        Numpy array containing instance map
+    """
 
     result_mat = sio.loadmat(mat_file_name)
     inst_map = result_mat['inst_map']
@@ -296,6 +446,24 @@ def get_inst_map(mat_file_name):
 
 
 def get_mean_h_concentrations(mat_file_name, image_file, epi_nuc_uids):
+    """Get mean and max H concentrations for epithelial nuclei
+    
+    Parameters
+    ----------
+    mat_file_name : str
+        Path to HoVerNet mat file
+    image_file : str
+        Path to 40x magnification image file
+    epi_nuc_uids : List
+        List of nucleus IDs
+
+    Returns
+    -------
+    nuc_mean_h : List
+        List of mean H concentration for each nucleus
+    nuc_max_h : 
+        List of max H concentration for each nucleus
+    """
 
     inst_map = get_inst_map(mat_file_name)
 
@@ -304,22 +472,13 @@ def get_mean_h_concentrations(mat_file_name, image_file, epi_nuc_uids):
 
     image = cv2.imread(image_file)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    #plt.imshow(hr_image)
-    #plt.show()
-
-    #extractor = he.MacenkoExtractor()
-    #he_mat, he_conc = extractor(image_file)
 
     he_mat, he_conc = StainTransformer(normalise = True).extractor(image_file)
 
-    #he_conc_sq = he_conc.reshape(2, 1136, 1136)
     image_dims = (2,) + inst_map.shape
     he_conc_sq = he_conc.reshape(image_dims)
 
     he_image = he_conc_sq[0, :, :]
-
-    #plt.imshow(he_image)
-    #plt.show()
 
     nuc_mean_h = []
     nuc_max_h = []
@@ -344,6 +503,30 @@ def get_mean_h_concentrations(mat_file_name, image_file, epi_nuc_uids):
 
 def output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contours, 
                         nuc_mean_h, nuc_max_h, epi_nuc_types=None):
+    """Output data frame containing properties of epithelial nuclei, for one image tile.
+    
+    Parameters
+    ----------
+    tile_id : str
+        Image tile basename
+    epi_nuc_uids : List
+        List of epithelial nucleus IDs
+    epi_nuc_centroids : List
+        List of epithelial nucleus centroid coords
+    epi_nuc_contours : List
+        List of epithilial nucleus contour coords
+    nuc_mean_h : List
+        List of nucleus mean H concentrations
+    nuc_max_h : List
+        List of nucleus max H concentrations
+    epi_nuc_types : Boolean
+        Is HoVerNet type available?
+
+    Returns
+    -------
+    df : Pandas data frame
+        Data frame of nucleus properties
+    """
     
     ellipses = [cv2.fitEllipse(np.array(contour)) for contour in epi_nuc_contours]
     contour_areas = [cv2.contourArea(np.array(contour)) for contour in epi_nuc_contours]
@@ -369,6 +552,19 @@ def output_nuclei_stats(tile_id, epi_nuc_uids, epi_nuc_centroids, epi_nuc_contou
 
 
 def run_model_for_predictions(model_path, image_file_names, batch_size, loader_workers):
+    """Run a saved model to generate predictions from image files.
+    Parameters
+    ----------
+    model_path : str
+        Path to saved model
+    image_file_names : List
+        List of paths to image files
+    batch_size : int
+        Batch size to use
+    loader_workers : int
+        Number of loader workers to use
+
+    """
 
     model = torch.load(model_path, map_location=DEVICE)
     model.eval()
@@ -381,6 +577,21 @@ def run_model_for_predictions(model_path, image_file_names, batch_size, loader_w
 
 
 def save_sample_image(image_file, hov_path, tile_id, epi_mask, epi_nuc_contours):
+    """Save a sample image showing original, epithlelium mask + epithelial nuclei
+    Parameters
+    ----------
+    image_file : str
+        Path to image
+    hov_path : str
+        Path to HoVerNet directory (containing json, mat, overlay dirs)
+    tile_id : str
+        Basename of image file
+    epi_mask : np array
+        Numpy array containing epithelium mask
+    epi_nuc_contours : List
+        List of contours for each nucleus
+    
+    """
 
     #hov_dir = os.path.abspath(os.path.join(json_file_path, os.pardir))
     overlay_file = os.path.join(hov_path, 'overlay', tile_id + '.png')
@@ -408,6 +619,23 @@ def save_sample_image(image_file, hov_path, tile_id, epi_mask, epi_nuc_contours)
 
 
 def loop_through_tiles(image_file_names, hi_res_image_path, hov_path):
+    """Run through input image files, generating predictions, identifying
+    epithelial nuclei and saving results to file.
+
+    Parameters
+    ----------
+    image_file_names : List 
+        List of paths to image files
+    hi_res_image_path : str
+        Path to hi res (40x) image files
+    hov_path : str
+        Path to HoVerNet directory (containing json, mat, overlay dirs)
+
+    Returns
+    -------
+    epi_nuc_data : Pandas data frame
+        Data frame containing properties of all epithelial nuclei
+    """
 
     epi_nuc_data = pd.DataFrame()
 

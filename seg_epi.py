@@ -1,8 +1,10 @@
-"""Segmentation of WSI images.
-
-Target images labelled as epithelium (1) or background (0).
-
 """
+Segmentation of WSI images using U-Net.
+WSI must have previously been divided into patches of a size compatible
+with the U-Net.
+Target images labelled as epithelium (1) or background (0).
+"""
+
 from argparse import (
     ArgumentDefaultsHelpFormatter,
     ArgumentParser,
@@ -14,6 +16,7 @@ import json
 
 import os
 from datetime import datetime
+from sqlite3.dbapi2 import _Parameters
 from PIL import Image
 import scipy.io as sio
 
@@ -93,13 +96,6 @@ def parse_command_line_args() -> Namespace:
         default="all"
     )
 
-#    parser.add_argument(
-#        "--train_frac",
-#        help="Fraction of dataset to use as training data. Default is 0.7",
-#        type=float,
-#        default=0.7
-#    )
-
     parser.add_argument(
         "--data_dir",
         help="Path to directory containing WSIs. Default is '../../epithelium_slides'",
@@ -125,6 +121,10 @@ def parse_command_line_args() -> Namespace:
 
 
 def change_working_dir():
+    """Create a new 'UNet...' directory labelled with timestamp
+    and make this the working directory.
+    """
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")[:-3]
     my_folder = "UNet_{}".format(timestamp)
     
@@ -133,7 +133,7 @@ def change_working_dir():
 
 
 def write_command_line_args(args: Namespace):
-    ''' Write the command line arguments to a file
+    ''' Write the command line arguments to a json file
 
     Parameters
     ----------
@@ -146,16 +146,26 @@ def write_command_line_args(args: Namespace):
 
 
 def write_losses_to_file(epoch, training_loss, validation_loss, filename="losses.txt"):
+    """One of four functions to write training metrics to a file. Lots of duplication,
+    really should be re-written as a single function.
+
+    Parameters
+    ----------
+    epoch           : int
+    training_loss   : float
+    validation_loss : float
+    filename        : str
+        File to write to, including suffix.
+    """
+
     f = open(filename, "a")
     f.write(f"Epoch {epoch+1} training loss: {training_loss:.3f}, validation loss: {validation_loss:.3f}\n")
     f.close()
-
 
 def write_acc_to_file(epoch, training_acc, validation_acc, filename="accuracy.txt"):
     f = open(filename, "a")
     f.write(f"Epoch {epoch+1} training accuracy: {training_acc:.3f}, validation accuracy: {validation_acc:.3f}\n")
     f.close()
-
 
 def write_dice_to_file(epoch, training_dice, validation_dice, filename="dice.txt"):
     f = open(filename, "a")
@@ -169,13 +179,26 @@ def write_jacc_to_file(epoch, training_jacc, validation_jacc, filename="jacc.txt
 
 
 def get_file_names(file_dir, img_set):
-    ''' List of files is without extensions as I'd originally intended to use the same
+    '''Return lists of image and mask file names.
+    'ImageSets' list is without extensions as I'd originally intended to use the same
     list for both images and masks, then realised I had named the mask files too
     stupidly for this to work.
 
-    file_dir needs to contain subdirectories "ImageSets", "images" and "masks"
+    
+
+    Parameters
+    ----------
+    file_dir : str
+        Directory containing subdirectories "ImageSets" (text files with lists of image set),
+        "images" (image files) and "masks" (target files)
+
+    Returns
+    -------
+    image_file_names    : List of str
+        List of image file paths
+    mask_file_names     :  List of str
+        List of mask file paths
     '''
-    #files = sorted(os.listdir(file_dir))
 
     img_list = os.path.join(file_dir, "ImageSets", img_set + ".txt")
     mask_list = os.path.join(file_dir, "ImageSets", img_set + "_mask.txt")
@@ -236,6 +259,28 @@ def convert_mask_pil_to_tensor(pil_img) -> Tensor:
 
 
 def convert_lizard_file_to_tensor(label_file):
+    """Convert the target mask from the Lizard .mat file to tensor
+
+    Parameters
+    ----------
+    label_file : str
+        Matlab file containing target mask.
+
+    Returns
+    -------
+    target : Tensor
+        The segmentation mask as a (C, H, W) Tensor.
+
+    Notes
+    -----
+    If:
+        grey[i, j] = 0, target[:, i, j] = [1, 0]
+        grey[i, j] = 1, target[:, i, j] = [0, 1]
+
+        etc.
+
+    """
+
     label = sio.loadmat(label_file)
     inst_map = label['inst_map'] 
     inst_map[inst_map > 0] = 1
@@ -272,15 +317,6 @@ def data_subset(data_set, subsample):
         raise ValueError("Subsample requested is not an integer or 'all'. Using whole dataset.")
 
     return data_set
-
-def split_dataset(dataset, train_frac):
-    '''
-    Split a dataset into training and validation datasets.
-    '''
-    train_num = int(train_frac * len(dataset))
-    val_num = len(dataset) - train_num
-
-    return torch.utils.data.random_split(dataset, [train_num, val_num])
 
 
 augment_transforms = transforms.Compose(
@@ -322,6 +358,20 @@ def get_data_set(data_dir, img_set, subsample):
     '''
     Get training and validation data sets from paths to
     directory holding "images" and "masks" directories.
+
+    Parameters
+    ----------
+    data_dir : str
+        Path to image directory (containing subfolders ImageSets, images, masks)
+    img_set : str
+        Image set to use: "train", "val", or "trainval"
+    subsample : int
+        Use only a subsample of images, of size subsample.
+
+    Returns
+    -------
+    data_set : torch dataset
+        The required dataset
     '''
 
     #if img_set not in ("train", "val", "trainval"):
@@ -363,7 +413,6 @@ def get_data_set(data_dir, img_set, subsample):
 
     data_set = data_subset(data_set, subsample)
 
-#    return split_dataset(data_set, train_frac)
     return data_set
 
 def get_data_loader(data_set, img_set, batch_size, loader_workers):
@@ -401,7 +450,19 @@ def get_data_loader(data_set, img_set, batch_size, loader_workers):
 
 
 def calculate_accuracy(predictions, targets):
-    ''' Calculate pixel-wise accuracy of predictions. '''
+    ''' Calculate pixel-wise accuracy of predictions. 
+    Parameters
+    ----------
+    predictions : tensor (N, C, H, W)
+        Batch of N image predictions
+    targets : tensor (N, C, H, W)
+        Batch of N target image tensors
+
+    Returns
+    -------
+    accuracy : float
+        Pixel-wise accuracy
+    '''
 
     _, pix_labels = torch.max(predictions, dim=1)
     _, pix_targets = torch.max(targets, dim=1)
@@ -412,7 +473,20 @@ def calculate_accuracy(predictions, targets):
 
 
 def calculate_dice(predictions, targets):
-    ''' Calculate dice score for predictions. '''
+    ''' Calculate dice score for predictions.     
+    Parameters
+    ----------
+    predictions : tensor (N, C, H, W)
+        Batch of N image predictions
+    targets : tensor (N, C, H, W)
+        Batch of N target image tensors
+
+    Returns
+    -------
+    dice : float
+        Dice (F1) score for predictions
+    '''
+
     smooth = 1.
      
     _, pix_labels = torch.max(predictions, dim=1)
@@ -426,7 +500,19 @@ def calculate_dice(predictions, targets):
 
 
 def calculate_jaccard(predictions, targets):
-    ''' Calculate Jaccard index for predictions. '''
+    ''' Calculate Jaccard index for predictions.     
+    Parameters
+    ----------
+    predictions : tensor (N, C, H, W)
+        Batch of N image predictions
+    targets : tensor (N, C, H, W)
+        Batch of N target image tensors
+
+    Returns
+    -------
+    jaccard : float
+        Jaccard index for predictions
+    '''
     smooth = 1.
      
     _, pix_labels = torch.max(predictions, dim=1)
@@ -452,11 +538,21 @@ def train_one_epoch(
         The model to train.
     data_loader : DataLoader
         The data to train on.
+    optimiser : Optimizer
+        The optimizer to use
+    loss_func : Module
+        The loss function to use
 
     Returns
     -------
-    running_loss : float
+    mean_loss : float
         The total loss for this epoch.
+    accuracy : float
+        Pixel-wise accuracy for this epoch.
+    dice : float
+        Dice score for this epoch.
+    jacc : float
+        Jaccard index for this epoch.
 
     """
     running_loss = 0.0
@@ -504,11 +600,21 @@ def validate_one_epoch(
         The model to train.
     data_loader : DataLoader
         The validation data loader.
+    optimiser : Optimizer
+        The optimizer to use
+    loss_func : Module
+        The loss function to use
 
     Returns
     -------
-    running_vloss : float
+    mean_vloss : float
         The total loss for this epoch.
+    accuracy : float
+        Pixel-wise accuracy for this epoch.
+    dice : float
+        Dice score for this epoch.
+    jacc : float
+        Jaccard index for this epoch.
 
     """
 # We don't need gradients on to do reporting
@@ -623,6 +729,6 @@ if __name__ == "__main__":
 
     fig = plot_loss_acc.plot_losses_and_accuracies()
     fig.savefig("loss_acc.png", facecolor = "white")
-    #plt.close(fig)
+    
 
     
